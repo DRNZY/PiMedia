@@ -1,45 +1,5 @@
 # PiMedia - Raspberry Pi Media Player
 
-## Nederlands
-
-### Wat is dit?
-Een simpel mediasysteem voor Raspberry Pi. Upload foto's en video's via je telefoon, speel ze af op een beamer of TV.
-
-### Benodigdheden
-- Raspberry Pi 4 (2GB+)
-- Micro SD kaart (16GB+)
-- Voeding (USB-C 3A)
-- HDMI kabel
-- Beamer of TV
-
-### Installatie (5 minuten)
-
-Stap 1: Flash Raspberry Pi OS Lite op SD kaart met Raspberry Pi Imager
-
-Stap 2: Kopieer deze files naar de Pi:
-    scp -r . pi@pimedia.local:~/pimedia/
-    ssh pi@pimedia.local
-    cd ~/pimedia
-    chmod +x install.sh setup.sh
-
-Stap 3: Installeer:
-    ./install.sh
-
-Stap 4: Configureer:
-    ./setup.sh
-
-Stap 5: Open telefoon browser, ga naar http://[IP]:5000
-
-### Gebruik
-- Upload: Sleep bestanden in web interface
-- Afspelen: Klik "Start" op telefoon
-- Volgende: Klik "Volgende" om te skippen
-- Stop: Klik "Stop"
-
-### Bestandsformaten
-- Afbeeldingen: JPG, PNG, GIF
-- Video's: MP4, MOV, AVI, MKV
-
 ## English
 
 ### What is this?

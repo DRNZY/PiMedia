@@ -1,57 +1,82 @@
-# PiMedia - Raspberry Pi Media Player
+# PiMedia
 
-## English
+Local-first media player and display appliance for Raspberry Pi and Linux desktops. Built to control `mpv` over an IPC UNIX socket with a modern web remote and REST API for projectors, exhibition displays, and home screens.
 
-### What is this?
-A simple media system for Raspberry Pi. Upload photos and videos from your phone, play them on a projector or TV.
+## Overview
 
-### Requirements
-- Raspberry Pi 4 (2GB+)
-- Micro SD card (16GB+)
-- Power supply (USB-C 3A)
-- HDMI cable
-- Projector or TV
+- **Hardware playback**: Direct hardware-accelerated playback via `mpv` with gapless looping and fullscreen layer output.
+- **IPC Remote**: Full bidirectional control over `/tmp/mpv-socket` (Play, Pause, Stop, Skip, Previous, Volume, and Fullscreen toggle).
+- **Responsive Web Dashboard**: Touch-friendly remote control designed for mobile phone browsers and desktop viewports.
+- **Media Management**: Drag-and-drop file uploader, media gallery filtering (Images vs Videos), instant single-file playback, and disk space telemetry.
+- **Slideshow Engine**: Configurable image transition intervals (3s to 30s) alongside video playback.
 
-### Installation (5 minutes)
+## Architecture
 
-Step 1: Flash Raspberry Pi OS Lite to SD card with Raspberry Pi Imager
+```text
+               +----------------------------------+
+               |  Phone / Laptop Web Browser UI  |
+               +-----------------+----------------+
+                                 | HTTP / JSON API
+                                 v
+               +----------------------------------+
+               |      PiMedia Flask Server        |
+               |        (Port 5000)               |
+               +-----------------+----------------+
+                                 | UNIX IPC Socket
+                                 v
+               +----------------------------------+
+               |         mpv Video Engine         |
+               |   (HDMI Display / Framebuffer)   |
+               +----------------------------------+
+```
 
-Step 2: Copy these files to the Pi:
-    scp -r . pi@pimedia.local:~/pimedia/
-    ssh pi@pimedia.local
-    cd ~/pimedia
-    chmod +x install.sh setup.sh
+## Supported Formats
 
-Step 3: Install:
-    ./install.sh
+- **Video**: MP4, MOV, MKV, AVI, WebM
+- **Images**: JPG, JPEG, PNG, GIF, WebP
 
-Step 4: Configure:
-    ./setup.sh
+## REST API Endpoints
 
-Step 5: Open phone browser, go to http://[IP]:5000
+- `GET /api/status`: Returns current playback state, now-playing file, volume, and host system vitals (disk usage, IP, CPU temperature).
+- `GET /api/files`: Returns list of media items with sizes and types.
+- `POST /api/playback/start`: Starts playlist playback (optional JSON payload: `{"file": "name.mp4", "duration": 10}`).
+- `POST /api/playback/pause`: Toggles playback pause state.
+- `POST /api/playback/stop`: Stops playback and terminates MPV instance.
+- `POST /api/playback/next`: Advances to next item in playlist.
+- `POST /api/playback/prev`: Returns to previous item in playlist.
+- `POST /api/playback/volume`: Sets volume (`{"volume": 80}`).
+- `POST /api/playback/duration`: Sets image slideshow duration in seconds (`{"duration": 15}`).
+- `POST /api/playback/fullscreen`: Toggles fullscreen output.
+- `POST /api/upload`: Multipart file upload endpoint.
+- `POST /api/delete`: Deletes file (`{"filename": "photo.jpg"}`).
 
-### Usage
-- Upload: Drag files in web interface
-- Play: Click "Start" on phone
-- Next: Click "Next" to skip
-- Stop: Click "Stop"
+## Installation
 
-### File Formats
-- Images: JPG, PNG, GIF
-- Videos: MP4, MOV, AVI, MKV
+```bash
+# 1. Clone repository
+git clone https://github.com/DRNZY/PiMedia.git
+cd PiMedia
 
-## Troubleshooting
+# 2. Run automated installer (installs mpv, python3-flask, systemd service)
+chmod +x install.sh setup.sh
+./install.sh
 
-Problem: Can't access web interface
-Solution: Check IP with hostname -I
+# 3. Access web dashboard from your phone or browser
+http://<raspberry-pi-ip>:5000
+```
 
-Problem: Black screen on projector
-Solution: Check HDMI cable, reboot
+## Systemd Service
 
-Problem: Videos don't play
-Solution: Install ffmpeg with sudo apt install ffmpeg
+PiMedia runs as a systemd background service:
 
-Problem: Upload fails
-Solution: Check disk space with df -h
+```bash
+# Check status
+systemctl status media
 
-License: MIT - Free for personal and commercial use.
+# Restart service
+sudo systemctl restart media
+```
+
+## License
+
+MIT License. Copyright (c) 2026 Darnell Dijksteel.

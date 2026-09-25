@@ -63,17 +63,15 @@ case "$1" in
         fi
         ;;
     *)
-        echo "PiMedia Control Utility"
-        echo ""
-        echo "Usage: ./pimedia.sh [run|start|stop|status|wifi-scan|wifi-connect]"
+        echo "Usage: ./pimedia.sh [command]"
         echo ""
         echo "Commands:"
-        echo "  run           Run PiMedia in foreground (ideal for testing)"
-        echo "  start         Start PiMedia background service"
-        echo "  stop          Stop PiMedia and active MPV playback"
-        echo "  status        Check server and process status"
-        echo "  wifi-scan     Scan for available wireless networks"
-        echo "  wifi-connect  Connect to a Wi-Fi network"
+        echo "  run           Run PiMedia in the foreground"
+        echo "  start         Start background service"
+        echo "  stop          Stop server and playback"
+        echo "  status        Check process status"
+        echo "  wifi-scan     Scan for wireless networks"
+        echo "  wifi-connect  Connect to a wireless network (<SSID> [password])"
         exit 0
         ;;
 esac

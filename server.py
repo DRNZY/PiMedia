@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-PiMedia - Precision Local Media Appliance for Displays, Projectors & Linux
-Features Apple Human Interface Design, MPV UNIX IPC control, web video streaming,
-Ken Burns motion transitions, background audio, HDMI-CEC, and display power scheduling.
+PiMedia local media player and display controller.
+Controls mpv via UNIX socket with a web remote and REST API.
 """
 
 import os
@@ -259,13 +258,11 @@ def start_mpv_playback(target_file=None, image_duration=None, is_stream_url=Fals
     except Exception as err:
         return False, f"Failed to spawn mpv: {err}"
 
-# ==========================================
-# Display Power & Scheduling Management
-# ==========================================
+# Display power and scheduling
 
 def set_display_power(state: bool):
     """Toggle HDMI / Display power state."""
-    # Method 1: Raspberry Pi vcgencmd
+    # Raspberry Pi vcgencmd
     if shutil.which("vcgencmd"):
         try:
             val = "1" if state else "0"
@@ -273,7 +270,7 @@ def set_display_power(state: bool):
         except Exception:
             pass
 
-    # Method 2: Wayland wlr-randr
+    # Wayland wlr-randr
     if shutil.which("wlr-randr"):
         try:
             action = "--on" if state else "--off"
@@ -281,7 +278,7 @@ def set_display_power(state: bool):
         except Exception:
             pass
 
-    # Method 3: X11 DPMS
+    # X11 DPMS
     if shutil.which("xset"):
         try:
             env = os.environ.copy()
@@ -292,7 +289,7 @@ def set_display_power(state: bool):
         except Exception:
             pass
 
-    # Pause or resume MPV accordingly
+    # Pause or resume MPV
     if is_mpv_alive():
         send_mpv_command({"command": ["set_property", "pause", not state]})
 
@@ -318,9 +315,7 @@ def display_scheduler_daemon():
 
 threading.Thread(target=display_scheduler_daemon, daemon=True).start()
 
-# ==========================================
-# HDMI-CEC TV Remote Listener
-# ==========================================
+# HDMI-CEC TV remote listener
 
 def cec_listener_daemon():
     """Listens for TV remote button presses via cec-client and controls MPV."""
@@ -356,9 +351,7 @@ def cec_listener_daemon():
     except Exception:
         pass
 
-# ==========================================
-# System Telemetry & Wi-Fi
-# ==========================================
+# System vitals and Wi-Fi
 
 def get_system_telemetry():
     folder = get_media_dir()
@@ -754,16 +747,14 @@ def api_delete():
 def serve_media(filename):
     return send_from_directory(get_media_dir(), filename)
 
-# ==========================================
-# Apple Design System Web UI (Full Feature Set)
-# ==========================================
+# Web UI
 
 INDEX_HTML = """<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>PiMedia &mdash; Control Center</title>
+  <title>PiMedia Remote</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -855,7 +846,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
   <div class="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[320px] bg-gradient-to-b from-blue-600/10 via-zinc-900/0 to-transparent blur-3xl pointer-events-none -z-10"></div>
 
-  <!-- Top Navigation Bar -->
+  <!-- Navigation Bar -->
   <header class="sticky top-0 z-40 px-4 py-3 sm:px-8 border-b border-white/5 bg-black/70 backdrop-blur-2xl">
     <div class="max-w-6xl mx-auto flex items-center justify-between">
       <div class="flex items-center gap-3">
@@ -871,12 +862,12 @@ INDEX_HTML = """<!DOCTYPE html>
       <div class="hidden sm:flex items-center bg-zinc-900/80 p-1 rounded-full border border-white/5 text-xs">
         <button onclick="switchView('remote')" id="tabViewRemote" class="px-4 py-1.5 rounded-full bg-zinc-800 text-white font-medium transition shadow-sm">Remote</button>
         <button onclick="switchView('media')" id="tabViewMedia" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Media</button>
-        <button onclick="switchView('stream')" id="tabViewStream" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Stream URL</button>
+        <button onclick="switchView('stream')" id="tabViewStream" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Stream</button>
         <button onclick="switchView('settings')" id="tabViewSettings" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Settings</button>
       </div>
 
       <div class="flex items-center gap-2">
-        <button onclick="toggleDisplayPower()" id="displayPowerBtn" class="p-2 rounded-full bg-zinc-900 border border-white/5 text-zinc-300 hover:text-white transition" title="Toggle Display Power">
+        <button onclick="toggleDisplayPower()" id="displayPowerBtn" class="p-2 rounded-full bg-zinc-900 border border-white/5 text-zinc-300 hover:text-white transition" title="Toggle display power">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
         </button>
         <div id="statusBadge" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-zinc-900 text-zinc-400 border border-white/5">
@@ -890,7 +881,7 @@ INDEX_HTML = """<!DOCTYPE html>
     </div>
   </header>
 
-  <!-- Mobile Segmented Bar -->
+  <!-- Mobile Navigation Bar -->
   <div class="sm:hidden px-4 pt-3">
     <div class="flex items-center justify-between bg-zinc-900/90 p-1 rounded-full border border-white/5 text-xs w-full">
       <button onclick="switchView('remote')" id="tabViewRemoteMobile" class="flex-1 py-1.5 rounded-full bg-zinc-800 text-white font-medium text-center transition">Remote</button>
@@ -907,7 +898,7 @@ INDEX_HTML = """<!DOCTYPE html>
       <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div class="space-y-1.5">
-            <span class="text-[11px] font-semibold tracking-widest text-blue-400 uppercase font-mono">Display Remote</span>
+            <span class="text-[11px] font-semibold tracking-widest text-blue-400 uppercase font-mono">Playback</span>
             <h2 class="text-xl sm:text-2xl font-semibold text-white tracking-tight truncate max-w-lg" id="nowPlayingText">No active playback</h2>
           </div>
           <div class="flex items-center gap-3 text-xs font-mono text-zinc-400 bg-black/40 px-3.5 py-1.5 rounded-xl border border-white/5 self-start sm:self-center">
@@ -927,7 +918,7 @@ INDEX_HTML = """<!DOCTYPE html>
               <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
               <span>Play</span>
             </button>
-            <button id="pauseBtn" onclick="controlAction('pause')" class="apple-pill p-3.5 rounded-2xl text-zinc-200 active:scale-95" title="Pause / Resume">
+            <button id="pauseBtn" onclick="controlAction('pause')" class="apple-pill p-3.5 rounded-2xl text-zinc-200 active:scale-95" title="Pause">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M10 9v6m4-6v6"/></svg>
             </button>
             <button id="stopBtn" onclick="controlAction('stop')" class="apple-btn-danger p-3.5 rounded-2xl active:scale-95" title="Stop">
@@ -962,7 +953,7 @@ INDEX_HTML = """<!DOCTYPE html>
         </div>
       </section>
 
-      <!-- Instant Upload Zone -->
+      <!-- Upload Zone -->
       <section>
         <div id="dropZone" class="border border-dashed border-white/10 hover:border-blue-500/50 bg-zinc-950/40 rounded-3xl p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-3">
           <input type="file" id="fileInput" multiple accept="image/*,video/*,audio/*" class="hidden" />
@@ -970,8 +961,8 @@ INDEX_HTML = """<!DOCTYPE html>
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
           </div>
           <div>
-            <p class="text-sm font-medium text-zinc-200">Drag media files here or tap to upload</p>
-            <p class="text-xs text-zinc-500 mt-0.5">Supports 4K/1080p MP4, MOV, MKV, MP3, FLAC, JPG, PNG, WebM</p>
+            <p class="text-sm font-medium text-zinc-200">Drag files here or select to upload</p>
+            <p class="text-xs text-zinc-500 mt-0.5">Supports MP4, MOV, MKV, WebM, JPG, PNG, WebP, MP3, FLAC, WAV</p>
           </div>
           <div id="uploadProgressContainer" class="w-full max-w-sm hidden mt-3">
             <div class="w-full bg-zinc-900 rounded-full h-1.5 overflow-hidden">
@@ -1008,29 +999,29 @@ INDEX_HTML = """<!DOCTYPE html>
       <div id="mediaGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></div>
       <div id="emptyState" class="hidden py-16 text-center text-zinc-500 space-y-2">
         <p class="text-sm">No media files in library</p>
-        <p class="text-xs text-zinc-600">Drag media files into the upload zone to begin playback</p>
+        <p class="text-xs text-zinc-600">Drag media files into the upload area to begin playback</p>
       </div>
     </div>
 
-    <!-- VIEW: Web Video & YouTube Stream -->
+    <!-- VIEW: Web Video & Stream -->
     <div id="viewStream" class="space-y-6 hidden">
       <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
         <div class="space-y-1.5">
-          <span class="text-[11px] font-semibold tracking-widest text-rose-400 uppercase font-mono">Direct Stream</span>
-          <h3 class="text-lg font-semibold text-white">Stream Web Video &amp; YouTube</h3>
-          <p class="text-xs text-zinc-400">Paste any YouTube video, live stream, Vimeo, or direct MP4/HLS URL to project immediately.</p>
+          <span class="text-[11px] font-semibold tracking-widest text-rose-400 uppercase font-mono">Stream</span>
+          <h3 class="text-lg font-semibold text-white">Web Stream</h3>
+          <p class="text-xs text-zinc-400">Play a direct video URL, YouTube link, or stream on the display.</p>
         </div>
 
         <div class="space-y-3 pt-2">
           <div class="flex flex-col sm:flex-row items-center gap-3">
-            <input type="url" id="streamUrlInput" placeholder="https://www.youtube.com/watch?v=... or http://.../stream.m3u8" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-2xl px-4 py-3.5 w-full focus:outline-none focus:border-blue-500" />
+            <input type="url" id="streamUrlInput" placeholder="https://www.youtube.com/watch?v=... or stream URL" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-2xl px-4 py-3.5 w-full focus:outline-none focus:border-blue-500" />
             <button onclick="startStreamUrl()" class="apple-btn-primary px-6 py-3.5 rounded-2xl text-xs font-semibold text-white whitespace-nowrap w-full sm:w-auto flex items-center justify-center gap-2">
               <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-              <span>Stream to Display</span>
+              <span>Play URL</span>
             </button>
           </div>
           <div class="flex items-center gap-2 text-[11px] text-zinc-500 font-mono">
-            <span>Powered by MPV + yt-dlp stream extractor</span>
+            <span>Plays through mpv and yt-dlp</span>
           </div>
         </div>
       </section>
@@ -1042,9 +1033,9 @@ INDEX_HTML = """<!DOCTYPE html>
       <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
         <div class="flex items-center justify-between">
           <div class="space-y-1">
-            <span class="text-[11px] font-semibold tracking-widest text-blue-400 uppercase font-mono">Zero-Config Wi-Fi</span>
+            <span class="text-[11px] font-semibold tracking-widest text-blue-400 uppercase font-mono">Network</span>
             <h3 class="text-lg font-semibold text-white">Wireless Networks</h3>
-            <p class="text-xs text-zinc-400">Scan and connect to new venue, office, or school Wi-Fi networks on the fly.</p>
+            <p class="text-xs text-zinc-400">Scan and connect to nearby Wi-Fi networks.</p>
           </div>
           <button onclick="scanWifi()" id="scanWifiBtn" class="apple-pill px-4 py-2 rounded-xl text-xs font-medium text-white flex items-center gap-1.5">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -1052,16 +1043,16 @@ INDEX_HTML = """<!DOCTYPE html>
           </button>
         </div>
         <div id="wifiList" class="space-y-2.5">
-          <div class="text-center py-6 text-zinc-500 text-xs font-mono">Tap "Scan Wi-Fi" to discover nearby wireless networks</div>
+          <div class="text-center py-6 text-zinc-500 text-xs font-mono">Select Scan Wi-Fi to list nearby networks</div>
         </div>
       </section>
 
-      <!-- Exhibition & Motion Settings -->
+      <!-- Playback Options & Background Audio -->
       <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
         <div class="space-y-1">
-          <span class="text-[11px] font-semibold tracking-widest text-purple-400 uppercase font-mono">Exhibition Engine</span>
-          <h3 class="text-lg font-semibold text-white">Transitions &amp; Background Audio</h3>
-          <p class="text-xs text-zinc-400">Configure photo motion effects, HDMI-CEC TV remote integration, and ambient audio soundtracks.</p>
+          <span class="text-[11px] font-semibold tracking-widest text-purple-400 uppercase font-mono">Playback Options</span>
+          <h3 class="text-lg font-semibold text-white">Transitions and Audio</h3>
+          <p class="text-xs text-zinc-400">Configure photo motion effects, TV remote control, and background audio.</p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
@@ -1069,10 +1060,10 @@ INDEX_HTML = """<!DOCTYPE html>
           <div class="apple-card rounded-2xl p-5 space-y-3 flex flex-col justify-between">
             <div class="space-y-1">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-white">Ken Burns Photo Drift</span>
+                <span class="text-xs font-semibold text-white">Photo Drift</span>
                 <input type="checkbox" id="kenBurnsToggle" onchange="toggleKenBurns(this.checked)" class="w-4 h-4 rounded text-blue-600 bg-zinc-800 border-zinc-700" />
               </div>
-              <p class="text-[11px] text-zinc-400">Adds smooth cinematic pan and zoom transitions to photos during slideshow playback.</p>
+              <p class="text-[11px] text-zinc-400">Pans and zooms photos slowly during slideshows.</p>
             </div>
           </div>
 
@@ -1083,7 +1074,7 @@ INDEX_HTML = """<!DOCTYPE html>
                 <span class="text-xs font-semibold text-white">HDMI-CEC TV Remote</span>
                 <input type="checkbox" id="cecToggle" onchange="toggleCec(this.checked)" class="w-4 h-4 rounded text-blue-600 bg-zinc-800 border-zinc-700" />
               </div>
-              <p class="text-[11px] text-zinc-400">Control playback, pause, and volume using your physical TV remote.</p>
+              <p class="text-[11px] text-zinc-400">Control playback and volume using a TV remote.</p>
             </div>
           </div>
 
@@ -1092,10 +1083,10 @@ INDEX_HTML = """<!DOCTYPE html>
             <label class="text-xs font-semibold text-white">Background Audio Track</label>
             <div class="flex items-center gap-2">
               <select id="bgAudioSelect" onchange="updateBgAudio(this.value)" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-xl px-3.5 py-2.5 w-full focus:outline-none focus:border-blue-500">
-                <option value="">None (Silent Slideshow)</option>
+                <option value="">None</option>
               </select>
             </div>
-            <p class="text-[11px] text-zinc-500">Selected audio file will loop continuously in the background during photo slideshows.</p>
+            <p class="text-[11px] text-zinc-500">Selected track loops in the background during image slideshows.</p>
           </div>
         </div>
       </section>
@@ -1103,16 +1094,16 @@ INDEX_HTML = """<!DOCTYPE html>
       <!-- Display Timed Sleep & Security -->
       <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
         <div class="space-y-1">
-          <span class="text-[11px] font-semibold tracking-widest text-emerald-400 uppercase font-mono">Power &amp; Protection</span>
-          <h3 class="text-lg font-semibold text-white">Display Sleep &amp; Access PIN</h3>
-          <p class="text-xs text-zinc-400">Schedule automatic projector sleep/wake cycles and set optional access PINs.</p>
+          <span class="text-[11px] font-semibold tracking-widest text-emerald-400 uppercase font-mono">Display and Security</span>
+          <h3 class="text-lg font-semibold text-white">Display Sleep and Security</h3>
+          <p class="text-xs text-zinc-400">Configure display timers and set an optional access PIN.</p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
           <!-- Timed Sleep Schedule -->
           <div class="apple-card rounded-2xl p-5 space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-white">Auto Power Schedule</span>
+              <span class="text-xs font-semibold text-white">Display Schedule</span>
               <input type="checkbox" id="schedToggle" onchange="saveSchedule()" class="w-4 h-4 rounded text-blue-600 bg-zinc-800 border-zinc-700" />
             </div>
             <div class="grid grid-cols-2 gap-2 text-xs">
@@ -1129,12 +1120,12 @@ INDEX_HTML = """<!DOCTYPE html>
 
           <!-- PIN Protection -->
           <div class="apple-card rounded-2xl p-5 space-y-3">
-            <label class="text-xs font-semibold text-white">Access PIN (Optional)</label>
+            <label class="text-xs font-semibold text-white">Access PIN</label>
             <div class="flex items-center gap-2">
               <input type="password" id="pinInput" placeholder="Leave blank for open access" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-xl px-3.5 py-2 w-full focus:outline-none focus:border-blue-500" />
               <button onclick="savePin()" class="apple-btn-primary px-4 py-2 rounded-xl text-xs font-medium text-white">Save</button>
             </div>
-            <p class="text-[11px] text-zinc-500">Require PIN for remote playback and media uploads.</p>
+            <p class="text-[11px] text-zinc-500">Requires a PIN for remote playback and file uploads.</p>
           </div>
         </div>
       </section>
@@ -1143,7 +1134,7 @@ INDEX_HTML = """<!DOCTYPE html>
   </main>
 
   <footer class="border-t border-white/5 py-4 px-6 text-center text-[11px] text-zinc-600 font-mono">
-    PiMedia Appliance &bull; Apple Design Philosophy &bull; Linux &amp; Raspberry Pi
+    PiMedia
   </footer>
 
   <!-- Connect Wi-Fi Modal -->
@@ -1660,5 +1651,5 @@ if __name__ == "__main__":
                 os.remove(stale)
         except OSError:
             pass
-    print(f"Starting PiMedia Appliance on http://0.0.0.0:5000 (Media: {MEDIA_DIR})")
+    print(f"Starting PiMedia on http://0.0.0.0:5000 (Media: {MEDIA_DIR})")
     app.run(host="0.0.0.0", port=5000, debug=False)

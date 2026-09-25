@@ -5,33 +5,29 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CURRENT_USER="${SUDO_USER:-$USER}"
 USER_HOME=$(eval echo "~$CURRENT_USER")
 
-echo "========================================="
-echo "       PiMedia Appliance Installer       "
-echo "========================================="
-
-echo "[1/4] Installing system dependencies..."
+echo "Installing PiMedia dependencies..."
 if command -v apt-get &>/dev/null; then
     sudo apt-get update -qq
-    sudo apt-get install -y -qq mpv python3 python3-venv python3-pip network-manager socat qrencode libnotify-bin 2>/dev/null || true
+    sudo apt-get install -y -qq mpv python3 python3-venv python3-pip network-manager socat libnotify-bin 2>/dev/null || true
 elif command -v pacman &>/dev/null; then
-    sudo pacman -Sy --noconfirm --needed mpv python python-virtualenv networkmanager socat qrencode 2>/dev/null || true
+    sudo pacman -Sy --noconfirm --needed mpv python python-virtualenv networkmanager socat 2>/dev/null || true
 fi
 
-echo "[2/4] Setting up Python virtual environment..."
+echo "Setting up Python virtual environment..."
 if [ ! -d "$DIR/.venv" ]; then
     python3 -m venv "$DIR/.venv"
 fi
 "$DIR/.venv/bin/pip" install --quiet flask werkzeug
 
-echo "[3/4] Initializing default media library..."
+echo "Configuring media directory..."
 MEDIA_DIR="$USER_HOME/media"
 mkdir -p "$MEDIA_DIR"
 chown -R "$CURRENT_USER:$CURRENT_USER" "$MEDIA_DIR" 2>/dev/null || true
 
-echo "[4/4] Configuring systemd service..."
+echo "Setting up systemd service..."
 sudo tee /etc/systemd/system/pimedia.service > /dev/null << EOF
 [Unit]
-Description=PiMedia Appliance Server
+Description=PiMedia Server
 After=network.target network-online.target
 Wants=network-online.target
 
@@ -53,18 +49,10 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable pimedia --now 2>/dev/null || true
 
-IP=$(hostname -I 2>/dev/null | awk "{print \$1}")
+IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 IP=${IP:-127.0.0.1}
 
-echo ""
-echo "========================================="
-echo "       Installation Successful!          "
-echo "========================================="
-echo "Web Remote URL: http://${IP}:5000"
-echo "Media Directory: $MEDIA_DIR"
-echo "CLI Utility:     $DIR/pimedia.sh"
-echo ""
-if command -v qrencode &>/dev/null; then
-    echo "Scan QR code on your phone to open remote:"
-    qrencode -t ANSI "http://${IP}:5000" 2>/dev/null || true
-fi
+echo "PiMedia installed."
+echo "Web interface: http://${IP}:5000"
+echo "Media folder:  $MEDIA_DIR"
+echo "CLI utility:   $DIR/pimedia.sh"

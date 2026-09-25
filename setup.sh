@@ -1,59 +1,40 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -e
 
-echo "=== PiMedia Setup Wizard ==="
+echo "PiMedia Setup"
 
-# Hostname
-echo ""
-echo "Enter hostname (default: pimedia1):"
-read -r hostname
-hostname=${hostname:-pimedia1}
+read -rp "Hostname [pimedia]: " hostname
+hostname=${hostname:-pimedia}
 sudo hostnamectl set-hostname "$hostname"
-sudo sed -i "s/127.0.1.1.*/127.0.1.1\t$hostname/" /etc/hosts
+sudo sed -i "s/127.0.1.1.*/127.0.1.1\t$hostname/" /etc/hosts 2>/dev/null || true
 
-# WiFi
-echo ""
-echo "Enter WiFi SSID (press Enter to skip):"
-read -r ssid
+read -rp "Wi-Fi SSID (leave empty to skip): " ssid
 if [[ -n "$ssid" ]]; then
-    echo "Enter WiFi password:"
-    read -rs password
+    read -rsp "Wi-Fi Password: " password
     echo ""
-    wpa_passphrase "$ssid" "$password" | sudo tee /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null
-    sudo wpa_cli -i wlan0 reconfigure 2>/dev/null || true
-    echo "WiFi configured"
-else
-    echo "WiFi skipped"
+    if command -v nmcli &>/dev/null; then
+        nmcli dev wifi connect "$ssid" password "$password"
+    elif command -v wpa_passphrase &>/dev/null; then
+        wpa_passphrase "$ssid" "$password" | sudo tee -a /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null
+        sudo wpa_cli -i wlan0 reconfigure 2>/dev/null || true
+    fi
 fi
 
-# Display
-echo ""
-echo "Select resolution:"
-echo "1) Auto-detect"
-echo "2) 1920x1080"
-echo "3) 1280x720"
-echo "4) 4K"
-read -r res
-case "$res" in
-    2) sudo raspi-config nonint do_resolution 2 82 ;;
-    3) sudo raspi-config nonint do_resolution 2 85 ;;
-    4) sudo raspi-config nonint do_resolution 2 95 ;;
-    *) echo "Auto-detect selected" ;;
-esac
+if command -v raspi-config &>/dev/null; then
+    echo "Display resolution:"
+    echo "1) Auto-detect"
+    echo "2) 1080p (1920x1080)"
+    echo "3) 720p (1280x720)"
+    echo "4) 4K (3840x2160)"
+    read -rp "Choice [1]: " res
+    case "$res" in
+        2) sudo raspi-config nonint do_resolution 2 82 2>/dev/null || true ;;
+        3) sudo raspi-config nonint do_resolution 2 85 2>/dev/null || true ;;
+        4) sudo raspi-config nonint do_resolution 2 95 2>/dev/null || true ;;
+    esac
+fi
 
-# Test
-echo ""
-echo "Testing..."
-sleep 2
-IP=$(hostname -I | awk '{print $1}')
+IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+IP=${IP:-127.0.0.1}
 
-echo ""
-echo "=== Setup Complete! ==="
-echo "Hostname: $hostname"
-echo "IP:       $IP"
-echo "URL:      http://${IP}:5000"
-echo ""
-echo "QR Code:"
-qrencode -t ANSI "http://${IP}:5000" 2>/dev/null || echo "Install qrencode: sudo apt install qrencode"
-echo ""
-echo "Upload via web or SMB: smb://$IP/Media"
-echo "Controls: Start/Stop/Next from any phone"
+echo "Setup complete. Web interface available at http://${IP}:5000"

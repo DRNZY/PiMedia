@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 PiMedia - Precision Local Media Appliance for Displays, Projectors & Linux
-Features Apple Human Interface Design principles, MPV UNIX IPC control,
-and seamless zero-config portable Wi-Fi networking.
+Features Apple Human Interface Design, MPV UNIX IPC control, web video streaming,
+Ken Burns motion transitions, background audio, HDMI-CEC, and display power scheduling.
 """
 
 import os
@@ -12,7 +12,8 @@ import time
 import socket
 import shutil
 import subprocess
-import re
+import threading
+from datetime import datetime
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory, render_template_string
 from werkzeug.utils import secure_filename
@@ -32,18 +33,33 @@ SOCKET_PATH = "/tmp/mpv-socket"
 PID_PATH = "/tmp/mpv.pid"
 PLAYLIST_PATH = "/tmp/pimedia-playlist.m3u"
 CONFIG_PATH = os.path.expanduser("~/.pimedia-config.json")
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "svg", "mp4", "mov", "avi", "mkv", "webm"}
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "svg", "mp4", "mov", "avi", "mkv", "webm", "mp3", "flac", "wav", "ogg", "m4a", "aac"}
 MAX_CONTENT_LENGTH = 1024 * 1024 * 1024  # 1 GB cap
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
 def load_config():
+    defaults = {
+        "auth_pin": "",
+        "image_duration": 10,
+        "auto_loop": True,
+        "ken_burns": False,
+        "background_audio": "",
+        "cec_enabled": False,
+        "display_schedule": {
+            "enabled": False,
+            "sleep_time": "23:00",
+            "wake_time": "07:00"
+        }
+    }
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
+                saved = json.load(f)
+                defaults.update(saved)
+                return defaults
         except Exception:
             pass
-    return {"auth_pin": "", "image_duration": 10, "auto_loop": True}
+    return defaults
 
 def save_config(cfg):
     try:
@@ -55,7 +71,6 @@ def save_config(cfg):
 CONFIG = load_config()
 
 def require_auth():
-    """Verify PIN/token if configured."""
     pin = CONFIG.get("auth_pin", "").strip()
     if not pin:
         return None
@@ -75,6 +90,8 @@ def get_file_type(ext):
     ext = ext.lower()
     if ext in {"mp4", "mov", "avi", "mkv", "webm"}:
         return "video"
+    if ext in {"mp3", "flac", "wav", "ogg", "m4a", "aac"}:
+        return "audio"
     return "image"
 
 def list_media_files():
@@ -163,50 +180,75 @@ def terminate_mpv():
         except OSError:
             pass
 
-def start_mpv_playback(target_file=None, image_duration=None):
+def start_mpv_playback(target_file=None, image_duration=None, is_stream_url=False):
     terminate_mpv()
     folder = get_media_dir()
-    files = list_media_files()
-    if not files:
-        return False, "No media files found in library"
+    
+    if is_stream_url and target_file:
+        # Stream URL directly (YouTube, RTSP, HLS, Web Video)
+        cmd = [
+            "mpv",
+            "--fs",
+            f"--input-ipc-server={SOCKET_PATH}",
+            "--no-osc",
+            "--no-osd-bar",
+            "--quiet",
+            "--keep-open=yes",
+            target_file
+        ]
+    else:
+        files = [f for f in list_media_files() if f["type"] in {"image", "video"}]
+        if not files:
+            return False, "No media files found in library"
 
-    if image_duration is None:
-        image_duration = CONFIG.get("image_duration", 10)
+        if image_duration is None:
+            image_duration = CONFIG.get("image_duration", 10)
 
-    playlist_items = []
-    if target_file:
-        match = next((f for f in files if f["name"] == target_file), None)
-        if match:
-            playlist_items.append(os.path.join(folder, match["name"]))
+        playlist_items = []
+        if target_file:
+            match = next((f for f in files if f["name"] == target_file), None)
+            if match:
+                playlist_items.append(os.path.join(folder, match["name"]))
 
-    for f in files:
-        full = os.path.join(folder, f["name"])
-        if full not in playlist_items:
-            playlist_items.append(full)
+        for f in files:
+            full = os.path.join(folder, f["name"])
+            if full not in playlist_items:
+                playlist_items.append(full)
 
-    try:
-        with open(PLAYLIST_PATH, "w", encoding="utf-8") as pf:
-            for p in playlist_items:
-                pf.write(p + "\n")
-    except OSError as err:
-        return False, f"Failed to write playlist: {err}"
+        try:
+            with open(PLAYLIST_PATH, "w", encoding="utf-8") as pf:
+                for p in playlist_items:
+                    pf.write(p + "\n")
+        except OSError as err:
+            return False, f"Failed to write playlist: {err}"
+
+        cmd = [
+            "mpv",
+            "--fs",
+            "--loop-playlist=yes",
+            f"--playlist={PLAYLIST_PATH}",
+            f"--input-ipc-server={SOCKET_PATH}",
+            f"--image-display-duration={int(image_duration)}",
+            "--no-osc",
+            "--no-osd-bar",
+            "--quiet",
+            "--keep-open=yes",
+        ]
+
+        # Ken Burns Motion transitions for photos
+        if CONFIG.get("ken_burns"):
+            cmd.extend(["--video-pan-x=0.02", "--video-pan-y=0.02", "--video-zoom=0.08"])
+
+        # Background Audio integration
+        bg_audio = CONFIG.get("background_audio")
+        if bg_audio:
+            bg_path = os.path.join(folder, bg_audio) if not bg_audio.startswith("http") else bg_audio
+            if os.path.exists(bg_path) or bg_audio.startswith("http"):
+                cmd.append(f"--audio-file={bg_path}")
 
     env = os.environ.copy()
     if "DISPLAY" not in env:
         env["DISPLAY"] = ":0"
-
-    cmd = [
-        "mpv",
-        "--fs",
-        "--loop-playlist=yes",
-        f"--playlist={PLAYLIST_PATH}",
-        f"--input-ipc-server={SOCKET_PATH}",
-        f"--image-display-duration={int(image_duration)}",
-        "--no-osc",
-        "--no-osd-bar",
-        "--quiet",
-        "--keep-open=yes",
-    ]
 
     try:
         proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -216,6 +258,107 @@ def start_mpv_playback(target_file=None, image_duration=None):
         return True, "Playback started"
     except Exception as err:
         return False, f"Failed to spawn mpv: {err}"
+
+# ==========================================
+# Display Power & Scheduling Management
+# ==========================================
+
+def set_display_power(state: bool):
+    """Toggle HDMI / Display power state."""
+    # Method 1: Raspberry Pi vcgencmd
+    if shutil.which("vcgencmd"):
+        try:
+            val = "1" if state else "0"
+            subprocess.run(["vcgencmd", "display_power", val], check=False)
+        except Exception:
+            pass
+
+    # Method 2: Wayland wlr-randr
+    if shutil.which("wlr-randr"):
+        try:
+            action = "--on" if state else "--off"
+            subprocess.run(["wlr-randr", "--output", "HDMI-A-1", action], check=False)
+        except Exception:
+            pass
+
+    # Method 3: X11 DPMS
+    if shutil.which("xset"):
+        try:
+            env = os.environ.copy()
+            if "DISPLAY" not in env:
+                env["DISPLAY"] = ":0"
+            action = "on" if state else "off"
+            subprocess.run(["xset", "dpms", "force", action], env=env, check=False)
+        except Exception:
+            pass
+
+    # Pause or resume MPV accordingly
+    if is_mpv_alive():
+        send_mpv_command({"command": ["set_property", "pause", not state]})
+
+    return True
+
+def display_scheduler_daemon():
+    """Background daemon checking display sleep/wake schedule."""
+    while True:
+        try:
+            sched = CONFIG.get("display_schedule", {})
+            if sched.get("enabled"):
+                now_str = datetime.now().strftime("%H:%M")
+                sleep_t = sched.get("sleep_time", "23:00")
+                wake_t = sched.get("wake_time", "07:00")
+
+                if now_str == sleep_t:
+                    set_display_power(False)
+                elif now_str == wake_t:
+                    set_display_power(True)
+        except Exception:
+            pass
+        time.sleep(30)
+
+threading.Thread(target=display_scheduler_daemon, daemon=True).start()
+
+# ==========================================
+# HDMI-CEC TV Remote Listener
+# ==========================================
+
+def cec_listener_daemon():
+    """Listens for TV remote button presses via cec-client and controls MPV."""
+    if not shutil.which("cec-client") or not CONFIG.get("cec_enabled"):
+        return
+
+    try:
+        proc = subprocess.Popen(
+            ["cec-client", "-d", "1"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+        for line in proc.stdout:
+            if not CONFIG.get("cec_enabled"):
+                break
+            if "key pressed:" in line:
+                key = line.split("key pressed:")[1].strip().lower()
+                if "play" in key or "select" in key:
+                    send_mpv_command({"command": ["cycle", "pause"]})
+                elif "pause" in key:
+                    send_mpv_command({"command": ["set_property", "pause", True]})
+                elif "stop" in key:
+                    terminate_mpv()
+                elif "forward" in key or "right" in key:
+                    send_mpv_command({"command": ["playlist-next"]})
+                elif "backward" in key or "left" in key:
+                    send_mpv_command({"command": ["playlist-prev"]})
+                elif "up" in key:
+                    send_mpv_command({"command": ["add", "volume", 5]})
+                elif "down" in key:
+                    send_mpv_command({"command": ["add", "volume", -5]})
+    except Exception:
+        pass
+
+# ==========================================
+# System Telemetry & Wi-Fi
+# ==========================================
 
 def get_system_telemetry():
     folder = get_media_dir()
@@ -246,18 +389,13 @@ def get_system_telemetry():
         "cpu_temp": cpu_temp,
         "media_count": len(list_media_files()),
         "pin_active": bool(CONFIG.get("auth_pin")),
+        "yt_dlp_available": shutil.which("yt-dlp") is not None,
+        "cec_available": shutil.which("cec-client") is not None,
     }
 
-# ==========================================
-# Wi-Fi Management Helpers (NetworkManager/wpa)
-# ==========================================
-
 def scan_wifi_networks():
-    """Scan available Wi-Fi networks using nmcli or iwlist."""
     networks = []
     seen = set()
-
-    # Try nmcli first (Standard on Raspberry Pi OS Bookworm & Modern Linux)
     if shutil.which("nmcli"):
         try:
             res = subprocess.run(
@@ -286,14 +424,11 @@ def scan_wifi_networks():
                 return sorted(networks, key=lambda x: (not x["connected"], -x["signal"]))
         except Exception:
             pass
-
     return networks
 
 def connect_to_wifi(ssid, password):
-    """Connect to a Wi-Fi network using NetworkManager."""
     if not ssid:
         return False, "SSID is required"
-
     if shutil.which("nmcli"):
         try:
             cmd = ["nmcli", "dev", "wifi", "connect", ssid]
@@ -305,20 +440,7 @@ def connect_to_wifi(ssid, password):
             return False, res.stderr.strip() or "Connection failed"
         except Exception as err:
             return False, f"NetworkManager error: {err}"
-
-    # Fallback to wpa_cli if nmcli is absent
-    if shutil.which("wpa_cli"):
-        try:
-            p = subprocess.run(["wpa_passphrase", ssid, password or ""], capture_output=True, text=True)
-            if p.returncode == 0:
-                with open("/etc/wpa_supplicant/wpa_supplicant.conf", "a") as f:
-                    f.write("\n" + p.stdout)
-                subprocess.run(["wpa_cli", "-i", "wlan0", "reconfigure"], check=False)
-                return True, f"Configured {ssid}"
-        except Exception as err:
-            return False, f"wpa_cli error: {err}"
-
-    return False, "No supported Wi-Fi management utility found (nmcli or wpa_cli required)"
+    return False, "nmcli required for Wi-Fi configuration"
 
 # ==========================================
 # REST API Endpoints
@@ -366,10 +488,7 @@ def api_status():
     return jsonify({
         "playback": playback,
         "system": get_system_telemetry(),
-        "config": {
-            "image_duration": CONFIG.get("image_duration", 10),
-            "pin_configured": bool(CONFIG.get("auth_pin")),
-        }
+        "config": CONFIG
     })
 
 @app.route("/api/files", methods=["GET"])
@@ -393,6 +512,23 @@ def api_playback_start():
     if not ok:
         return jsonify({"error": msg}), 400
     return jsonify({"message": msg})
+
+@app.route("/api/playback/stream", methods=["POST"])
+def api_playback_stream():
+    """Stream a web video / YouTube link directly to MPV."""
+    auth_res = require_auth()
+    if auth_res:
+        return auth_res
+
+    data = request.get_json(silent=True) or {}
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "Stream URL is required"}), 400
+
+    ok, msg = start_mpv_playback(target_file=url, is_stream_url=True)
+    if not ok:
+        return jsonify({"error": msg}), 400
+    return jsonify({"message": f"Streaming {url}"})
 
 @app.route("/api/playback/stop", methods=["POST"])
 def api_playback_stop():
@@ -456,6 +592,28 @@ def api_playback_duration():
     send_mpv_command({"command": ["set_property", "image-display-duration", duration]})
     return jsonify({"message": f"Slideshow duration set to {duration}s", "duration": duration})
 
+@app.route("/api/playback/kenburns", methods=["POST"])
+def api_playback_kenburns():
+    auth_res = require_auth()
+    if auth_res:
+        return auth_res
+    data = request.get_json(silent=True) or {}
+    enabled = bool(data.get("enabled", False))
+    CONFIG["ken_burns"] = enabled
+    save_config(CONFIG)
+    return jsonify({"message": f"Ken Burns motion {'enabled' if enabled else 'disabled'}", "ken_burns": enabled})
+
+@app.route("/api/playback/background_audio", methods=["POST"])
+def api_playback_background_audio():
+    auth_res = require_auth()
+    if auth_res:
+        return auth_res
+    data = request.get_json(silent=True) or {}
+    audio_file = data.get("audio_file", "").strip()
+    CONFIG["background_audio"] = audio_file
+    save_config(CONFIG)
+    return jsonify({"message": "Background audio updated", "background_audio": audio_file})
+
 @app.route("/api/playback/fullscreen", methods=["POST"])
 def api_playback_fullscreen():
     auth_res = require_auth()
@@ -465,6 +623,43 @@ def api_playback_fullscreen():
     if res is None:
         return jsonify({"error": "MPV not connected"}), 503
     return jsonify({"message": "Toggled fullscreen"})
+
+@app.route("/api/display/power", methods=["POST"])
+def api_display_power():
+    auth_res = require_auth()
+    if auth_res:
+        return auth_res
+    data = request.get_json(silent=True) or {}
+    state = bool(data.get("power", True))
+    set_display_power(state)
+    return jsonify({"message": f"Display power set to {'ON' if state else 'OFF'}", "power": state})
+
+@app.route("/api/display/schedule", methods=["POST"])
+def api_display_schedule():
+    auth_res = require_auth()
+    if auth_res:
+        return auth_res
+    data = request.get_json(silent=True) or {}
+    CONFIG["display_schedule"] = {
+        "enabled": bool(data.get("enabled", False)),
+        "sleep_time": data.get("sleep_time", "23:00"),
+        "wake_time": data.get("wake_time", "07:00"),
+    }
+    save_config(CONFIG)
+    return jsonify({"message": "Display power schedule updated", "schedule": CONFIG["display_schedule"]})
+
+@app.route("/api/settings/cec", methods=["POST"])
+def api_settings_cec():
+    auth_res = require_auth()
+    if auth_res:
+        return auth_res
+    data = request.get_json(silent=True) or {}
+    enabled = bool(data.get("enabled", False))
+    CONFIG["cec_enabled"] = enabled
+    save_config(CONFIG)
+    if enabled:
+        threading.Thread(target=cec_listener_daemon, daemon=True).start()
+    return jsonify({"message": f"HDMI-CEC remote {'enabled' if enabled else 'disabled'}", "cec_enabled": enabled})
 
 @app.route("/api/wifi/scan", methods=["GET"])
 def api_wifi_scan():
@@ -560,7 +755,7 @@ def serve_media(filename):
     return send_from_directory(get_media_dir(), filename)
 
 # ==========================================
-# Apple Design System Web UI
+# Apple Design System Web UI (Full Feature Set)
 # ==========================================
 
 INDEX_HTML = """<!DOCTYPE html>
@@ -571,7 +766,7 @@ INDEX_HTML = """<!DOCTYPE html>
   <title>PiMedia &mdash; Control Center</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
     :root {
       --apple-ease: cubic-bezier(0.16, 1, 0.3, 1);
     }
@@ -581,6 +776,7 @@ INDEX_HTML = """<!DOCTYPE html>
       color: #f5f5f7;
       letter-spacing: -0.011em;
     }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
     .apple-glass {
       background: rgba(18, 18, 20, 0.75);
       backdrop-filter: blur(40px) saturate(190%);
@@ -634,7 +830,6 @@ INDEX_HTML = """<!DOCTYPE html>
       border-color: #0071e3 !important;
       background-color: rgba(0, 113, 227, 0.08) !important;
     }
-    /* Smooth custom slider */
     input[type=range] {
       -webkit-appearance: none;
       background: rgba(255, 255, 255, 0.15);
@@ -658,7 +853,6 @@ INDEX_HTML = """<!DOCTYPE html>
 </head>
 <body class="min-h-screen flex flex-col antialiased selection:bg-blue-600 selection:text-white pb-12">
 
-  <!-- Apple Studio Ambient Light Gradient -->
   <div class="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[320px] bg-gradient-to-b from-blue-600/10 via-zinc-900/0 to-transparent blur-3xl pointer-events-none -z-10"></div>
 
   <!-- Top Navigation Bar -->
@@ -674,14 +868,17 @@ INDEX_HTML = """<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- Segmented View Tabs (Now Playing, Media, Wi-Fi & Settings) -->
       <div class="hidden sm:flex items-center bg-zinc-900/80 p-1 rounded-full border border-white/5 text-xs">
         <button onclick="switchView('remote')" id="tabViewRemote" class="px-4 py-1.5 rounded-full bg-zinc-800 text-white font-medium transition shadow-sm">Remote</button>
         <button onclick="switchView('media')" id="tabViewMedia" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Media</button>
-        <button onclick="switchView('settings')" id="tabViewSettings" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Wi-Fi &amp; Settings</button>
+        <button onclick="switchView('stream')" id="tabViewStream" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Stream URL</button>
+        <button onclick="switchView('settings')" id="tabViewSettings" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Settings</button>
       </div>
 
       <div class="flex items-center gap-2">
+        <button onclick="toggleDisplayPower()" id="displayPowerBtn" class="p-2 rounded-full bg-zinc-900 border border-white/5 text-zinc-300 hover:text-white transition" title="Toggle Display Power">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        </button>
         <div id="statusBadge" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-zinc-900 text-zinc-400 border border-white/5">
           <span class="w-2 h-2 rounded-full bg-zinc-500" id="statusDot"></span>
           <span id="statusText">Idle</span>
@@ -698,7 +895,8 @@ INDEX_HTML = """<!DOCTYPE html>
     <div class="flex items-center justify-between bg-zinc-900/90 p-1 rounded-full border border-white/5 text-xs w-full">
       <button onclick="switchView('remote')" id="tabViewRemoteMobile" class="flex-1 py-1.5 rounded-full bg-zinc-800 text-white font-medium text-center transition">Remote</button>
       <button onclick="switchView('media')" id="tabViewMediaMobile" class="flex-1 py-1.5 rounded-full text-zinc-400 hover:text-white text-center transition">Media</button>
-      <button onclick="switchView('settings')" id="tabViewSettingsMobile" class="flex-1 py-1.5 rounded-full text-zinc-400 hover:text-white text-center transition">Wi-Fi</button>
+      <button onclick="switchView('stream')" id="tabViewStreamMobile" class="flex-1 py-1.5 rounded-full text-zinc-400 hover:text-white text-center transition">Stream</button>
+      <button onclick="switchView('settings')" id="tabViewSettingsMobile" class="flex-1 py-1.5 rounded-full text-zinc-400 hover:text-white text-center transition">Settings</button>
     </div>
   </div>
 
@@ -706,7 +904,6 @@ INDEX_HTML = """<!DOCTYPE html>
 
     <!-- VIEW: Remote & Now Playing -->
     <div id="viewRemote" class="space-y-6">
-      <!-- Apple Glass Remote Card -->
       <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div class="space-y-1.5">
@@ -720,7 +917,7 @@ INDEX_HTML = """<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- Touch-Friendly Tactile Controls -->
+        <!-- Controls Row -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pt-4 border-t border-white/5">
           <div class="flex items-center gap-3 justify-center sm:justify-start">
             <button onclick="controlAction('prev')" class="apple-pill p-3.5 rounded-2xl text-zinc-200 active:scale-95" title="Previous">
@@ -741,15 +938,12 @@ INDEX_HTML = """<!DOCTYPE html>
             </button>
           </div>
 
-          <!-- Quick Sliders (Volume & Slide Duration) -->
           <div class="flex items-center gap-6 justify-center sm:justify-end">
-            <!-- Volume Slider -->
             <div class="flex items-center gap-2.5">
               <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
               <input type="range" id="volumeSlider" min="0" max="100" value="100" onchange="updateVolume(this.value)" class="w-20 sm:w-24" />
             </div>
 
-            <!-- Slide Timing -->
             <div class="flex items-center gap-2 text-xs text-zinc-400">
               <span>Interval:</span>
               <select id="slideDuration" onchange="updateDuration(this.value)" class="bg-black/60 border border-white/10 rounded-xl px-2.5 py-1.5 text-zinc-200 text-xs focus:outline-none">
@@ -771,13 +965,13 @@ INDEX_HTML = """<!DOCTYPE html>
       <!-- Instant Upload Zone -->
       <section>
         <div id="dropZone" class="border border-dashed border-white/10 hover:border-blue-500/50 bg-zinc-950/40 rounded-3xl p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-3">
-          <input type="file" id="fileInput" multiple accept="image/*,video/*" class="hidden" />
+          <input type="file" id="fileInput" multiple accept="image/*,video/*,audio/*" class="hidden" />
           <div class="w-12 h-12 rounded-2xl bg-zinc-900 border border-white/5 flex items-center justify-center text-blue-400 shadow-inner">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
           </div>
           <div>
             <p class="text-sm font-medium text-zinc-200">Drag media files here or tap to upload</p>
-            <p class="text-xs text-zinc-500 mt-0.5">Supports 4K/1080p MP4, MOV, MKV, JPG, PNG, GIF, WebM</p>
+            <p class="text-xs text-zinc-500 mt-0.5">Supports 4K/1080p MP4, MOV, MKV, MP3, FLAC, JPG, PNG, WebM</p>
           </div>
           <div id="uploadProgressContainer" class="w-full max-w-sm hidden mt-3">
             <div class="w-full bg-zinc-900 rounded-full h-1.5 overflow-hidden">
@@ -806,20 +1000,43 @@ INDEX_HTML = """<!DOCTYPE html>
             <button onclick="setTab('all')" id="tabAll" class="px-3 py-1 rounded-full bg-zinc-800 text-white font-medium transition">All</button>
             <button onclick="setTab('video')" id="tabVideo" class="px-3 py-1 rounded-full text-zinc-400 hover:text-white transition">Videos</button>
             <button onclick="setTab('image')" id="tabImage" class="px-3 py-1 rounded-full text-zinc-400 hover:text-white transition">Images</button>
+            <button onclick="setTab('audio')" id="tabAudio" class="px-3 py-1 rounded-full text-zinc-400 hover:text-white transition">Audio</button>
           </div>
         </div>
       </div>
 
-      <div id="mediaGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <!-- Media Cards -->
-      </div>
+      <div id="mediaGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></div>
       <div id="emptyState" class="hidden py-16 text-center text-zinc-500 space-y-2">
         <p class="text-sm">No media files in library</p>
         <p class="text-xs text-zinc-600">Drag media files into the upload zone to begin playback</p>
       </div>
     </div>
 
-    <!-- VIEW: Wi-Fi & Settings -->
+    <!-- VIEW: Web Video & YouTube Stream -->
+    <div id="viewStream" class="space-y-6 hidden">
+      <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
+        <div class="space-y-1.5">
+          <span class="text-[11px] font-semibold tracking-widest text-rose-400 uppercase font-mono">Direct Stream</span>
+          <h3 class="text-lg font-semibold text-white">Stream Web Video &amp; YouTube</h3>
+          <p class="text-xs text-zinc-400">Paste any YouTube video, live stream, Vimeo, or direct MP4/HLS URL to project immediately.</p>
+        </div>
+
+        <div class="space-y-3 pt-2">
+          <div class="flex flex-col sm:flex-row items-center gap-3">
+            <input type="url" id="streamUrlInput" placeholder="https://www.youtube.com/watch?v=... or http://.../stream.m3u8" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-2xl px-4 py-3.5 w-full focus:outline-none focus:border-blue-500" />
+            <button onclick="startStreamUrl()" class="apple-btn-primary px-6 py-3.5 rounded-2xl text-xs font-semibold text-white whitespace-nowrap w-full sm:w-auto flex items-center justify-center gap-2">
+              <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <span>Stream to Display</span>
+            </button>
+          </div>
+          <div class="flex items-center gap-2 text-[11px] text-zinc-500 font-mono">
+            <span>Powered by MPV + yt-dlp stream extractor</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- VIEW: Settings, Wi-Fi, Display & Audio -->
     <div id="viewSettings" class="space-y-6 hidden">
       <!-- Wi-Fi Networking Card -->
       <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
@@ -827,44 +1044,97 @@ INDEX_HTML = """<!DOCTYPE html>
           <div class="space-y-1">
             <span class="text-[11px] font-semibold tracking-widest text-blue-400 uppercase font-mono">Zero-Config Wi-Fi</span>
             <h3 class="text-lg font-semibold text-white">Wireless Networks</h3>
-            <p class="text-xs text-zinc-400">Easily connect to new venue, home, or office Wi-Fi networks on the go.</p>
+            <p class="text-xs text-zinc-400">Scan and connect to new venue, office, or school Wi-Fi networks on the fly.</p>
           </div>
           <button onclick="scanWifi()" id="scanWifiBtn" class="apple-pill px-4 py-2 rounded-xl text-xs font-medium text-white flex items-center gap-1.5">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             <span>Scan Wi-Fi</span>
           </button>
         </div>
-
         <div id="wifiList" class="space-y-2.5">
           <div class="text-center py-6 text-zinc-500 text-xs font-mono">Tap "Scan Wi-Fi" to discover nearby wireless networks</div>
         </div>
       </section>
 
-      <!-- Security & Device Preferences -->
+      <!-- Exhibition & Motion Settings -->
       <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
         <div class="space-y-1">
-          <span class="text-[11px] font-semibold tracking-widest text-emerald-400 uppercase font-mono">Security &amp; Storage</span>
-          <h3 class="text-lg font-semibold text-white">Appliance Protection</h3>
-          <p class="text-xs text-zinc-400">Set an optional 4-digit PIN for public exhibitions, or leave blank for seamless local access.</p>
+          <span class="text-[11px] font-semibold tracking-widest text-purple-400 uppercase font-mono">Exhibition Engine</span>
+          <h3 class="text-lg font-semibold text-white">Transitions &amp; Background Audio</h3>
+          <p class="text-xs text-zinc-400">Configure photo motion effects, HDMI-CEC TV remote integration, and ambient audio soundtracks.</p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-          <div class="apple-card rounded-2xl p-5 space-y-3">
-            <label class="text-xs font-medium text-zinc-300">Access PIN (Optional)</label>
-            <div class="flex items-center gap-2">
-              <input type="password" id="pinInput" placeholder="Leave empty for open access" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-xl px-3.5 py-2.5 w-full focus:outline-none focus:border-blue-500" />
-              <button onclick="savePin()" class="apple-btn-primary px-4 py-2.5 rounded-xl text-xs font-medium text-white">Save</button>
+          <!-- Ken Burns Motion -->
+          <div class="apple-card rounded-2xl p-5 space-y-3 flex flex-col justify-between">
+            <div class="space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-white">Ken Burns Photo Drift</span>
+                <input type="checkbox" id="kenBurnsToggle" onchange="toggleKenBurns(this.checked)" class="w-4 h-4 rounded text-blue-600 bg-zinc-800 border-zinc-700" />
+              </div>
+              <p class="text-[11px] text-zinc-400">Adds smooth cinematic pan and zoom transitions to photos during slideshow playback.</p>
             </div>
-            <p class="text-[11px] text-zinc-500">When set, visitors must enter this PIN to control playback or delete media.</p>
           </div>
 
-          <div class="apple-card rounded-2xl p-5 space-y-2 text-xs">
-            <span class="text-zinc-400 font-medium">Appliance Status</span>
-            <div class="space-y-1 text-zinc-300 font-mono text-[11px]">
-              <div>Operating Mode: Standalone IPC</div>
-              <div id="cpuTempText">CPU Temp: --</div>
-              <div id="diskFreeText">Free Storage: --</div>
+          <!-- HDMI-CEC Remote -->
+          <div class="apple-card rounded-2xl p-5 space-y-3 flex flex-col justify-between">
+            <div class="space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-white">HDMI-CEC TV Remote</span>
+                <input type="checkbox" id="cecToggle" onchange="toggleCec(this.checked)" class="w-4 h-4 rounded text-blue-600 bg-zinc-800 border-zinc-700" />
+              </div>
+              <p class="text-[11px] text-zinc-400">Control playback, pause, and volume using your physical TV remote.</p>
             </div>
+          </div>
+
+          <!-- Background Audio Selection -->
+          <div class="apple-card rounded-2xl p-5 space-y-3 sm:col-span-2">
+            <label class="text-xs font-semibold text-white">Background Audio Track</label>
+            <div class="flex items-center gap-2">
+              <select id="bgAudioSelect" onchange="updateBgAudio(this.value)" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-xl px-3.5 py-2.5 w-full focus:outline-none focus:border-blue-500">
+                <option value="">None (Silent Slideshow)</option>
+              </select>
+            </div>
+            <p class="text-[11px] text-zinc-500">Selected audio file will loop continuously in the background during photo slideshows.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Display Timed Sleep & Security -->
+      <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
+        <div class="space-y-1">
+          <span class="text-[11px] font-semibold tracking-widest text-emerald-400 uppercase font-mono">Power &amp; Protection</span>
+          <h3 class="text-lg font-semibold text-white">Display Sleep &amp; Access PIN</h3>
+          <p class="text-xs text-zinc-400">Schedule automatic projector sleep/wake cycles and set optional access PINs.</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+          <!-- Timed Sleep Schedule -->
+          <div class="apple-card rounded-2xl p-5 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-white">Auto Power Schedule</span>
+              <input type="checkbox" id="schedToggle" onchange="saveSchedule()" class="w-4 h-4 rounded text-blue-600 bg-zinc-800 border-zinc-700" />
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <label class="text-[10px] text-zinc-400 uppercase font-mono">Sleep Time</label>
+                <input type="time" id="sleepTimeInput" value="23:00" onchange="saveSchedule()" class="bg-black/60 border border-white/10 rounded-lg px-2 py-1.5 text-zinc-200 text-xs w-full focus:outline-none" />
+              </div>
+              <div>
+                <label class="text-[10px] text-zinc-400 uppercase font-mono">Wake Time</label>
+                <input type="time" id="wakeTimeInput" value="07:00" onchange="saveSchedule()" class="bg-black/60 border border-white/10 rounded-lg px-2 py-1.5 text-zinc-200 text-xs w-full focus:outline-none" />
+              </div>
+            </div>
+          </div>
+
+          <!-- PIN Protection -->
+          <div class="apple-card rounded-2xl p-5 space-y-3">
+            <label class="text-xs font-semibold text-white">Access PIN (Optional)</label>
+            <div class="flex items-center gap-2">
+              <input type="password" id="pinInput" placeholder="Leave blank for open access" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-xl px-3.5 py-2 w-full focus:outline-none focus:border-blue-500" />
+              <button onclick="savePin()" class="apple-btn-primary px-4 py-2 rounded-xl text-xs font-medium text-white">Save</button>
+            </div>
+            <p class="text-[11px] text-zinc-500">Require PIN for remote playback and media uploads.</p>
           </div>
         </div>
       </section>
@@ -895,9 +1165,10 @@ INDEX_HTML = """<!DOCTYPE html>
     let mediaItems = [];
     let activeTab = 'all';
     let targetSsid = '';
+    let currentPowerState = true;
 
     function switchView(viewName) {
-      const views = ['Remote', 'Media', 'Settings'];
+      const views = ['Remote', 'Media', 'Stream', 'Settings'];
       views.forEach(v => {
         const el = document.getElementById('view' + v);
         const tab = document.getElementById('tabView' + v);
@@ -927,12 +1198,6 @@ INDEX_HTML = """<!DOCTYPE html>
         const storageEl = document.getElementById('storageInfo');
         if (storageEl) storageEl.textContent = `Free: ${data.system.disk_free_gb} GB (${data.system.disk_used_percent}%)`;
 
-        const cpuTempEl = document.getElementById('cpuTempText');
-        if (cpuTempEl && data.system.cpu_temp) cpuTempEl.textContent = `CPU Temp: ${data.system.cpu_temp}°C`;
-
-        const diskFreeText = document.getElementById('diskFreeText');
-        if (diskFreeText) diskFreeText.textContent = `Free Storage: ${data.system.disk_free_gb} GB / ${data.system.disk_total_gb} GB`;
-
         const badge = document.getElementById('statusBadge');
         const dot = document.getElementById('statusDot');
         const text = document.getElementById('statusText');
@@ -957,6 +1222,19 @@ INDEX_HTML = """<!DOCTYPE html>
         if (durSelect && data.config.image_duration) {
           durSelect.value = String(data.config.image_duration);
         }
+
+        const kbToggle = document.getElementById('kenBurnsToggle');
+        if (kbToggle) kbToggle.checked = Boolean(data.config.ken_burns);
+
+        const cecToggle = document.getElementById('cecToggle');
+        if (cecToggle) cecToggle.checked = Boolean(data.config.cec_enabled);
+
+        const sched = data.config.display_schedule || {};
+        const schedToggle = document.getElementById('schedToggle');
+        if (schedToggle) schedToggle.checked = Boolean(sched.enabled);
+        if (sched.sleep_time) document.getElementById('sleepTimeInput').value = sched.sleep_time;
+        if (sched.wake_time) document.getElementById('wakeTimeInput').value = sched.wake_time;
+
       } catch (err) {
         console.error(err);
       }
@@ -969,9 +1247,19 @@ INDEX_HTML = """<!DOCTYPE html>
         mediaItems = await res.json();
         document.getElementById('fileCountBadge').textContent = mediaItems.length;
         renderGrid();
+        updateBgAudioOptions();
       } catch (err) {
         console.error(err);
       }
+    }
+
+    function updateBgAudioOptions() {
+      const select = document.getElementById('bgAudioSelect');
+      if (!select) return;
+      const audioFiles = mediaItems.filter(m => m.type === 'audio');
+      const currentVal = select.value;
+      select.innerHTML = '<option value="">None (Silent Slideshow)</option>' + audioFiles.map(a => `<option value="${a.name}">${a.name}</option>`).join('');
+      select.value = currentVal;
     }
 
     function formatBytes(bytes) {
@@ -1017,7 +1305,11 @@ INDEX_HTML = """<!DOCTYPE html>
                      <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                    </div>
                  </div>`
-              : `<img src="/media/${encodeURIComponent(item.name)}" class="w-full h-full object-cover loading="lazy" />`
+              : item.type === 'audio'
+              ? `<div class="w-full h-full flex flex-col items-center justify-center bg-zinc-900/80 text-blue-400">
+                   <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+                 </div>`
+              : `<img src="/media/${encodeURIComponent(item.name)}" class="w-full h-full object-cover" loading="lazy" />`
             }
             <button onclick="playDirect('${item.name}')" class="absolute inset-0 z-10 opacity-0 group-hover:opacity-100 bg-blue-600/30 backdrop-blur-sm flex items-center justify-center transition text-xs font-semibold text-white gap-1.5">
               <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1040,12 +1332,14 @@ INDEX_HTML = """<!DOCTYPE html>
 
     function setTab(tab) {
       activeTab = tab;
-      ['All', 'Video', 'Image'].forEach(t => {
+      ['All', 'Video', 'Image', 'Audio'].forEach(t => {
         const el = document.getElementById('tab' + t);
-        if (t.toLowerCase() === tab) {
-          el.className = 'px-3 py-1 rounded-full bg-zinc-800 text-white font-medium transition';
-        } else {
-          el.className = 'px-3 py-1 rounded-full text-zinc-400 hover:text-white transition';
+        if (el) {
+          if (t.toLowerCase() === tab) {
+            el.className = 'px-3 py-1 rounded-full bg-zinc-800 text-white font-medium transition';
+          } else {
+            el.className = 'px-3 py-1 rounded-full text-zinc-400 hover:text-white transition';
+          }
         }
       });
       renderGrid();
@@ -1080,6 +1374,23 @@ INDEX_HTML = """<!DOCTYPE html>
       }
     }
 
+    async function startStreamUrl() {
+      const url = document.getElementById('streamUrlInput').value.trim();
+      if (!url) return alert('Please enter a stream or video URL');
+      try {
+        const res = await fetch('/api/playback/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const d = await res.json();
+        alert(d.message || d.error);
+        fetchStatus();
+      } catch (err) {
+        alert('Failed to trigger stream playback');
+      }
+    }
+
     async function updateVolume(val) {
       try {
         await fetch('/api/playback/volume', {
@@ -1098,6 +1409,71 @@ INDEX_HTML = """<!DOCTYPE html>
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ duration: parseInt(val) })
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function toggleKenBurns(enabled) {
+      try {
+        await fetch('/api/playback/kenburns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled })
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function toggleCec(enabled) {
+      try {
+        await fetch('/api/settings/cec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled })
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function updateBgAudio(val) {
+      try {
+        await fetch('/api/playback/background_audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio_file: val })
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function toggleDisplayPower() {
+      currentPowerState = !currentPowerState;
+      try {
+        await fetch('/api/display/power', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ power: currentPowerState })
+        });
+        alert(`Display turned ${currentPowerState ? 'ON' : 'OFF'}`);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function saveSchedule() {
+      const enabled = document.getElementById('schedToggle').checked;
+      const sleep_time = document.getElementById('sleepTimeInput').value;
+      const wake_time = document.getElementById('wakeTimeInput').value;
+      try {
+        await fetch('/api/display/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled, sleep_time, wake_time })
         });
       } catch (err) {
         console.error(err);
@@ -1266,7 +1642,6 @@ INDEX_HTML = """<!DOCTYPE html>
       fetchFiles();
     }
 
-    // Heartbeat
     refreshAll();
     setInterval(fetchStatus, 3000);
   </script>

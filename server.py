@@ -776,90 +776,90 @@ INDEX_HTML = """<!DOCTYPE html>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
-      --apple-ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
     }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+      font-family: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background-color: #000000;
       color: #ffffff;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
     .font-mono {
-      font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     }
-    .ios-panel {
+    .panel-surface {
       background: #1c1c1e;
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 24px;
     }
-    .ios-tile {
+    .tile-surface {
       background: #2c2c2e;
       border: 1px solid rgba(255, 255, 255, 0.06);
       border-radius: 18px;
-      transition: background-color 0.2s var(--apple-ease), transform 0.15s var(--apple-ease);
+      transition: background-color 0.2s var(--ease-spring), transform 0.15s var(--ease-spring);
     }
-    .ios-tile:active {
+    .tile-surface:active {
       background: #3a3a3c;
       transform: scale(0.98);
     }
-    .ios-btn-primary {
+    .btn-primary {
       background: #0a84ff;
       color: #ffffff;
-      transition: all 0.2s var(--apple-ease);
+      transition: all 0.2s var(--ease-spring);
     }
-    .ios-btn-primary:hover {
+    .btn-primary:hover {
       background: #0071e3;
     }
-    .ios-btn-primary:active {
+    .btn-primary:active {
       transform: scale(0.97);
     }
-    .ios-btn-secondary {
+    .btn-secondary {
       background: #2c2c2e;
       color: #ffffff;
       border: 1px solid rgba(255, 255, 255, 0.08);
-      transition: all 0.2s var(--apple-ease);
+      transition: all 0.2s var(--ease-spring);
     }
-    .ios-btn-secondary:hover {
+    .btn-secondary:hover {
       background: #3a3a3c;
     }
-    .ios-btn-secondary:active {
+    .btn-secondary:active {
       transform: scale(0.96);
     }
-    .ios-btn-danger {
+    .btn-danger {
       background: rgba(255, 69, 58, 0.15);
       color: #ff453a;
       border: 1px solid rgba(255, 69, 58, 0.25);
-      transition: all 0.2s var(--apple-ease);
+      transition: all 0.2s var(--ease-spring);
     }
-    .ios-btn-danger:hover {
+    .btn-danger:hover {
       background: rgba(255, 69, 58, 0.25);
     }
-    .ios-btn-danger:active {
+    .btn-danger:active {
       transform: scale(0.96);
     }
-    /* iOS Switch */
-    .ios-switch {
+    /* Toggle Switch */
+    .toggle-switch {
       position: relative;
       display: inline-block;
       width: 50px;
       height: 30px;
       flex-shrink: 0;
     }
-    .ios-switch input {
+    .toggle-switch input {
       opacity: 0;
       width: 0;
       height: 0;
     }
-    .ios-switch-slider {
+    .toggle-slider {
       position: absolute;
       cursor: pointer;
       top: 0; left: 0; right: 0; bottom: 0;
       background-color: #39393d;
-      transition: background-color 0.25s var(--apple-ease);
+      transition: background-color 0.25s var(--ease-spring);
       border-radius: 30px;
     }
-    .ios-switch-slider:before {
+    .toggle-slider:before {
       position: absolute;
       content: "";
       height: 26px;
@@ -867,14 +867,14 @@ INDEX_HTML = """<!DOCTYPE html>
       left: 2px;
       bottom: 2px;
       background-color: #ffffff;
-      transition: transform 0.25s var(--apple-ease);
+      transition: transform 0.25s var(--ease-spring);
       border-radius: 50%;
       box-shadow: 0 2px 5px rgba(0,0,0,0.3);
     }
-    input:checked + .ios-switch-slider {
+    input:checked + .toggle-slider {
       background-color: #30d158;
     }
-    input:checked + .ios-switch-slider:before {
+    input:checked + .toggle-slider:before {
       transform: translateX(20px);
     }
     /* Native style slider */
@@ -905,7 +905,7 @@ INDEX_HTML = """<!DOCTYPE html>
 </head>
 <body class="min-h-screen flex flex-col antialiased selection:bg-blue-600 selection:text-white pb-12">
 
-  <!-- Apple Navigation Bar -->
+  <!-- Navigation Bar -->
   <header class="sticky top-0 z-40 px-4 py-3 sm:px-8 border-b border-white/10 bg-[#000000]/90 backdrop-blur-xl">
     <div class="max-w-5xl mx-auto flex items-center justify-between gap-4">
       
@@ -955,11 +955,11 @@ INDEX_HTML = """<!DOCTYPE html>
 
   <main class="max-w-4xl mx-auto px-4 py-6 sm:px-6 flex-1 w-full space-y-6">
 
-    <!-- VIEW 1: Remote (Control Center Media Player + Apple TV Clickpad) -->
+    <!-- VIEW 1: Remote (Media Player + Remote Clickpad) -->
     <div id="viewRemote" class="space-y-6">
       
-      <!-- Apple Control Center Media Player Card -->
-      <section class="ios-panel p-6 sm:p-7 space-y-6">
+      <!-- Media Player Card -->
+      <section class="panel-surface p-6 sm:p-7 space-y-6">
         
         <!-- Media Header & Artwork -->
         <div class="flex items-center gap-4">
@@ -972,7 +972,7 @@ INDEX_HTML = """<!DOCTYPE html>
             <p class="text-xs text-[#8e8e93] font-mono mt-0.5" id="storageSummary">Ready to play</p>
           </div>
           <div class="flex items-center gap-1.5">
-            <button onclick="controlAction('fullscreen')" class="ios-btn-secondary p-2.5 rounded-full" title="Toggle Fullscreen">
+            <button onclick="controlAction('fullscreen')" class="btn-secondary p-2.5 rounded-full" title="Toggle Fullscreen">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
             </button>
           </div>
@@ -991,11 +991,11 @@ INDEX_HTML = """<!DOCTYPE html>
 
         <!-- Transport Controls -->
         <div class="flex items-center justify-center gap-4 sm:gap-6 pt-2">
-          <button onclick="seekRelative(-10)" class="ios-btn-secondary p-3 rounded-full" title="Skip backward 10s">
+          <button onclick="seekRelative(-10)" class="btn-secondary p-3 rounded-full" title="Skip backward 10s">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"/></svg>
           </button>
           
-          <button onclick="controlAction('prev')" class="ios-btn-secondary p-3.5 rounded-full" title="Previous item">
+          <button onclick="controlAction('prev')" class="btn-secondary p-3.5 rounded-full" title="Previous item">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7"/></svg>
           </button>
 
@@ -1004,11 +1004,11 @@ INDEX_HTML = """<!DOCTYPE html>
             <svg id="pauseIcon" class="w-6 h-6 fill-current hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
           </button>
 
-          <button onclick="controlAction('next')" class="ios-btn-secondary p-3.5 rounded-full" title="Next item">
+          <button onclick="controlAction('next')" class="btn-secondary p-3.5 rounded-full" title="Next item">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 5l7 7-7 7"/></svg>
           </button>
 
-          <button onclick="seekRelative(10)" class="ios-btn-secondary p-3 rounded-full" title="Skip forward 10s">
+          <button onclick="seekRelative(10)" class="btn-secondary p-3 rounded-full" title="Skip forward 10s">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 005 8v8a1 1 0 001.6.8l5.334-4zM19.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.334-4z"/></svg>
           </button>
         </div>
@@ -1017,14 +1017,14 @@ INDEX_HTML = """<!DOCTYPE html>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-white/10">
           
           <!-- Volume Capsule Slider -->
-          <div class="ios-tile p-3.5 flex items-center gap-3">
+          <div class="tile-surface p-3.5 flex items-center gap-3">
             <svg class="w-4 h-4 text-[#8e8e93]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
             <input type="range" id="volumeSlider" min="0" max="100" value="100" onchange="updateVolume(this.value)" class="flex-1" />
             <svg class="w-4 h-4 text-[#8e8e93]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
           </div>
 
           <!-- Slideshow Speed Picker -->
-          <div class="ios-tile p-3.5 flex items-center justify-between">
+          <div class="tile-surface p-3.5 flex items-center justify-between">
             <span class="text-xs text-[#8e8e93]">Slide Duration</span>
             <select id="slideDuration" onchange="updateDuration(this.value)" class="bg-[#1c1c1e] border border-white/10 text-xs text-white rounded-lg px-2.5 py-1 focus:outline-none">
               <option value="3">3s</option>
@@ -1037,10 +1037,10 @@ INDEX_HTML = """<!DOCTYPE html>
         </div>
       </section>
 
-      <!-- Apple TV Remote Clickpad -->
-      <section class="ios-panel p-6 sm:p-7 flex flex-col items-center">
+      <!-- Remote Clickpad -->
+      <section class="panel-surface p-6 sm:p-7 flex flex-col items-center">
         <div class="text-center space-y-1 mb-6">
-          <h3 class="text-sm font-semibold text-white">Apple TV Clickpad</h3>
+          <h3 class="text-sm font-semibold text-white">Remote Clickpad</h3>
           <p class="text-xs text-[#8e8e93]">Tactile navigation wheel for displays and projectors</p>
         </div>
 
@@ -1075,12 +1075,12 @@ INDEX_HTML = """<!DOCTYPE html>
 
         <!-- Auxiliary Buttons Cluster -->
         <div class="flex items-center gap-4 mt-6">
-          <button onclick="controlAction('stop')" class="ios-btn-danger px-5 py-2.5 rounded-full text-xs font-medium flex items-center gap-2" title="Stop Playback">
+          <button onclick="controlAction('stop')" class="btn-danger px-5 py-2.5 rounded-full text-xs font-medium flex items-center gap-2" title="Stop Playback">
             <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
             <span>Stop</span>
           </button>
           
-          <button onclick="toggleDisplayPower()" class="ios-btn-secondary px-5 py-2.5 rounded-full text-xs font-medium flex items-center gap-2" title="Power Display">
+          <button onclick="toggleDisplayPower()" class="btn-secondary px-5 py-2.5 rounded-full text-xs font-medium flex items-center gap-2" title="Power Display">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             <span>Display</span>
           </button>
@@ -1140,7 +1140,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
     <!-- VIEW 3: Web Stream -->
     <div id="viewStream" class="space-y-6 hidden">
-      <section class="ios-panel p-6 sm:p-8 space-y-6">
+      <section class="panel-surface p-6 sm:p-8 space-y-6">
         <div class="space-y-1">
           <h3 class="text-lg font-semibold text-white tracking-tight">Web Stream</h3>
           <p class="text-xs text-[#8e8e93]">Stream online video directly to the display using mpv and yt-dlp.</p>
@@ -1152,33 +1152,33 @@ INDEX_HTML = """<!DOCTYPE html>
               <input type="url" id="streamUrlInput" placeholder="https://www.youtube.com/watch?v=... or direct video link" class="bg-[#2c2c2e] border border-white/10 text-xs text-white rounded-2xl px-4 py-3.5 pl-10 w-full focus:outline-none focus:border-[#0a84ff]" />
               <svg class="w-4 h-4 text-[#8e8e93] absolute left-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
             </div>
-            <button onclick="startStreamUrl()" class="ios-btn-primary px-6 py-3.5 rounded-2xl text-xs font-semibold whitespace-nowrap w-full sm:w-auto flex items-center justify-center gap-2">
+            <button onclick="startStreamUrl()" class="btn-primary px-6 py-3.5 rounded-2xl text-xs font-semibold whitespace-nowrap w-full sm:w-auto flex items-center justify-center gap-2">
               <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
               <span>Play to Screen</span>
             </button>
           </div>
 
           <div class="flex flex-wrap gap-2 text-xs">
-            <button onclick="fillPreset('https://www.youtube.com/watch?v=dQw4w9WgXcQ')" class="ios-btn-secondary px-3 py-1.5 rounded-full text-[11px]">YouTube Sample</button>
-            <button onclick="fillPreset('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4')" class="ios-btn-secondary px-3 py-1.5 rounded-full text-[11px]">Direct MP4 Sample</button>
+            <button onclick="fillPreset('https://www.youtube.com/watch?v=dQw4w9WgXcQ')" class="btn-secondary px-3 py-1.5 rounded-full text-[11px]">YouTube Sample</button>
+            <button onclick="fillPreset('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4')" class="btn-secondary px-3 py-1.5 rounded-full text-[11px]">Direct MP4 Sample</button>
           </div>
         </div>
       </section>
     </div>
 
-    <!-- VIEW 4: iOS Inset Grouped Settings -->
+    <!-- VIEW 4: Settings -->
     <div id="viewSettings" class="space-y-6 hidden">
       
       <!-- Group 1: Wireless Networks -->
       <div class="space-y-2">
         <span class="text-[11px] font-semibold tracking-wider text-[#8e8e93] uppercase font-mono px-4">Wireless Networks</span>
-        <div class="ios-panel p-5 space-y-4">
+        <div class="panel-surface p-5 space-y-4">
           <div class="flex items-center justify-between">
             <div>
               <h4 class="text-sm font-semibold text-white">Nearby Wi-Fi</h4>
               <p class="text-xs text-[#8e8e93]">Scan and connect to local wireless networks</p>
             </div>
-            <button onclick="scanWifi()" id="scanWifiBtn" class="ios-btn-secondary px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5">
+            <button onclick="scanWifi()" id="scanWifiBtn" class="btn-secondary px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
               <span>Scan</span>
             </button>
@@ -1192,7 +1192,7 @@ INDEX_HTML = """<!DOCTYPE html>
       <!-- Group 2: Playback & Motion -->
       <div class="space-y-2">
         <span class="text-[11px] font-semibold tracking-wider text-[#8e8e93] uppercase font-mono px-4">Playback &amp; Hardware</span>
-        <div class="ios-panel divide-y divide-white/10 overflow-hidden">
+        <div class="panel-surface divide-y divide-white/10 overflow-hidden">
           
           <!-- Photo Drift Switch -->
           <div class="p-4 sm:p-5 flex items-center justify-between">
@@ -1200,9 +1200,9 @@ INDEX_HTML = """<!DOCTYPE html>
               <h4 class="text-sm font-semibold text-white">Photo Pan &amp; Zoom Drift</h4>
               <p class="text-xs text-[#8e8e93]">Slowly moves and scales photos during slideshow playback</p>
             </div>
-            <label class="ios-switch">
+            <label class="toggle-switch">
               <input type="checkbox" id="kenBurnsToggle" onchange="toggleKenBurns(this.checked)" />
-              <span class="ios-switch-slider"></span>
+              <span class="toggle-slider"></span>
             </label>
           </div>
 
@@ -1212,9 +1212,9 @@ INDEX_HTML = """<!DOCTYPE html>
               <h4 class="text-sm font-semibold text-white">HDMI-CEC Remote</h4>
               <p class="text-xs text-[#8e8e93]">Control playback and volume with your TV remote</p>
             </div>
-            <label class="ios-switch">
+            <label class="toggle-switch">
               <input type="checkbox" id="cecToggle" onchange="toggleCec(this.checked)" />
-              <span class="ios-switch-slider"></span>
+              <span class="toggle-slider"></span>
             </label>
           </div>
 
@@ -1232,7 +1232,7 @@ INDEX_HTML = """<!DOCTYPE html>
       <!-- Group 3: Display Timer & PIN -->
       <div class="space-y-2">
         <span class="text-[11px] font-semibold tracking-wider text-[#8e8e93] uppercase font-mono px-4">Schedule &amp; Security</span>
-        <div class="ios-panel divide-y divide-white/10 overflow-hidden">
+        <div class="panel-surface divide-y divide-white/10 overflow-hidden">
           
           <!-- Timed Power Schedule -->
           <div class="p-4 sm:p-5 space-y-3">
@@ -1241,9 +1241,9 @@ INDEX_HTML = """<!DOCTYPE html>
                 <h4 class="text-sm font-semibold text-white">Display Power Schedule</h4>
                 <p class="text-xs text-[#8e8e93]">Automatically sleeps and wakes the HDMI output</p>
               </div>
-              <label class="ios-switch">
+              <label class="toggle-switch">
                 <input type="checkbox" id="schedToggle" onchange="saveSchedule()" />
-                <span class="ios-switch-slider"></span>
+                <span class="toggle-slider"></span>
               </label>
             </div>
             <div class="grid grid-cols-2 gap-3 pt-2 text-xs">
@@ -1266,7 +1266,7 @@ INDEX_HTML = """<!DOCTYPE html>
             </div>
             <div class="flex items-center gap-2">
               <input type="password" id="pinInput" placeholder="Leave empty for open access" class="bg-[#2c2c2e] border border-white/10 text-xs text-white rounded-xl px-3.5 py-2.5 w-full focus:outline-none focus:border-[#0a84ff]" />
-              <button onclick="savePin()" class="ios-btn-primary px-4 py-2.5 rounded-xl text-xs font-medium">Save</button>
+              <button onclick="savePin()" class="btn-primary px-4 py-2.5 rounded-xl text-xs font-medium">Save</button>
             </div>
           </div>
         </div>
@@ -1275,7 +1275,7 @@ INDEX_HTML = """<!DOCTYPE html>
       <!-- Group 4: Diagnostics -->
       <div class="space-y-2">
         <span class="text-[11px] font-semibold tracking-wider text-[#8e8e93] uppercase font-mono px-4">System Diagnostics</span>
-        <div class="ios-panel p-5 space-y-3 text-xs font-mono">
+        <div class="panel-surface p-5 space-y-3 text-xs font-mono">
           <div class="flex justify-between py-1 border-b border-white/5">
             <span class="text-[#8e8e93]">IP Address</span>
             <span class="text-white" id="diagIp">127.0.0.1</span>
@@ -1301,15 +1301,15 @@ INDEX_HTML = """<!DOCTYPE html>
 
   <!-- Connect Wi-Fi Modal -->
   <div id="wifiModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
-    <div class="ios-panel p-6 sm:p-7 max-w-sm w-full space-y-4">
+    <div class="panel-surface p-6 sm:p-7 max-w-sm w-full space-y-4">
       <div class="space-y-1">
         <h4 class="text-base font-semibold text-white" id="modalSsidTitle">Connect to Wi-Fi</h4>
         <p class="text-xs text-[#8e8e93]">Enter network password to join.</p>
       </div>
       <input type="password" id="modalWifiPassword" placeholder="Password" class="bg-[#2c2c2e] border border-white/10 text-xs text-white rounded-xl px-3.5 py-3 w-full focus:outline-none focus:border-[#0a84ff]" />
       <div class="flex items-center justify-end gap-2.5 pt-2">
-        <button onclick="closeWifiModal()" class="ios-btn-secondary px-4 py-2 rounded-xl text-xs">Cancel</button>
-        <button onclick="submitWifiConnect()" class="ios-btn-primary px-5 py-2 rounded-xl text-xs font-medium">Join</button>
+        <button onclick="closeWifiModal()" class="btn-secondary px-4 py-2 rounded-xl text-xs">Cancel</button>
+        <button onclick="submitWifiConnect()" class="btn-primary px-5 py-2 rounded-xl text-xs font-medium">Join</button>
       </div>
     </div>
   </div>
@@ -1475,7 +1475,7 @@ INDEX_HTML = """<!DOCTYPE html>
       empty.classList.add('hidden');
 
       grid.innerHTML = filtered.map(item => `
-        <div class="group ios-panel p-2.5 overflow-hidden flex flex-col justify-between">
+        <div class="group panel-surface p-2.5 overflow-hidden flex flex-col justify-between">
           <div class="relative w-full aspect-video bg-[#2c2c2e] rounded-xl flex items-center justify-center overflow-hidden">
             ${item.type === 'video' 
               ? `<video src="/media/${encodeURIComponent(item.name)}" class="w-full h-full object-cover" preload="metadata"></video>
@@ -1789,7 +1789,7 @@ INDEX_HTML = """<!DOCTYPE html>
         }
 
         list.innerHTML = data.map(net => `
-          <div class="ios-tile p-3.5 flex items-center justify-between">
+          <div class="tile-surface p-3.5 flex items-center justify-between">
             <div class="flex items-center gap-3">
               <div class="w-8 h-8 rounded-xl ${net.connected ? 'bg-[#30d158]/20 text-[#30d158]' : 'bg-[#1c1c1e] text-[#8e8e93]'} flex items-center justify-center">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
@@ -1801,7 +1801,7 @@ INDEX_HTML = """<!DOCTYPE html>
             </div>
             ${net.connected 
               ? `<span class="px-3 py-1 rounded-full bg-[#30d158]/15 text-[#30d158] text-[11px] font-medium border border-[#30d158]/30">Connected</span>`
-              : `<button onclick="openWifiModal('${net.ssid}')" class="ios-btn-primary px-3.5 py-1.5 rounded-xl text-xs font-medium">Join</button>`
+              : `<button onclick="openWifiModal('${net.ssid}')" class="btn-primary px-3.5 py-1.5 rounded-xl text-xs font-medium">Join</button>`
             }
           </div>
         `).join('');

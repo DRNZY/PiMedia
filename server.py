@@ -561,6 +561,24 @@ def api_playback_prev():
         return jsonify({"error": "MPV not connected"}), 503
     return jsonify({"message": "Previous track"})
 
+@app.route("/api/playback/seek", methods=["POST"])
+def api_playback_seek():
+    auth_res = require_auth()
+    if auth_res:
+        return auth_res
+    data = request.get_json(silent=True) or {}
+    if "seconds" in data:
+        secs = float(data["seconds"])
+        res = send_mpv_command({"command": ["seek", secs, "relative"]})
+    elif "position" in data:
+        pos = float(data["position"])
+        res = send_mpv_command({"command": ["seek", pos, "absolute"]})
+    else:
+        return jsonify({"error": "Missing seek parameters"}), 400
+    if res is None:
+        return jsonify({"error": "MPV not connected"}), 503
+    return jsonify({"message": "Seek complete"})
+
 @app.route("/api/playback/volume", methods=["POST"])
 def api_playback_volume():
     auth_res = require_auth()
@@ -747,7 +765,7 @@ def api_delete():
 def serve_media(filename):
     return send_from_directory(get_media_dir(), filename)
 
-# Web UI
+## Web UI
 
 INDEX_HTML = """<!DOCTYPE html>
 <html lang="en" class="dark">
@@ -757,80 +775,119 @@ INDEX_HTML = """<!DOCTYPE html>
   <title>PiMedia Remote</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
     :root {
       --apple-ease: cubic-bezier(0.16, 1, 0.3, 1);
     }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
       background-color: #000000;
-      color: #f5f5f7;
-      letter-spacing: -0.011em;
+      color: #ffffff;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
-    .font-mono { font-family: 'JetBrains Mono', monospace; }
-    .apple-glass {
-      background: rgba(18, 18, 20, 0.75);
-      backdrop-filter: blur(40px) saturate(190%);
-      -webkit-backdrop-filter: blur(40px) saturate(190%);
+    .font-mono {
+      font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    }
+    .ios-panel {
+      background: #1c1c1e;
       border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8), 0 0 1px 1px rgba(255, 255, 255, 0.05);
+      border-radius: 24px;
     }
-    .apple-card {
-      background: rgba(24, 24, 27, 0.65);
-      backdrop-filter: blur(30px);
-      -webkit-backdrop-filter: blur(30px);
+    .ios-tile {
+      background: #2c2c2e;
       border: 1px solid rgba(255, 255, 255, 0.06);
-      transition: all 0.35s var(--apple-ease);
+      border-radius: 18px;
+      transition: background-color 0.2s var(--apple-ease), transform 0.15s var(--apple-ease);
     }
-    .apple-card:hover {
-      border-color: rgba(255, 255, 255, 0.14);
-      transform: translateY(-2px);
-    }
-    .apple-pill {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      transition: all 0.25s var(--apple-ease);
-    }
-    .apple-pill:hover {
-      background: rgba(255, 255, 255, 0.14);
-      border-color: rgba(255, 255, 255, 0.18);
-    }
-    .apple-btn-primary {
-      background: #0071e3;
-      transition: all 0.25s var(--apple-ease);
-      box-shadow: 0 8px 20px -4px rgba(0, 113, 227, 0.4);
-    }
-    .apple-btn-primary:hover {
-      background: #0077ed;
-      transform: scale(1.02);
-    }
-    .apple-btn-primary:active {
+    .ios-tile:active {
+      background: #3a3a3c;
       transform: scale(0.98);
     }
-    .apple-btn-danger {
+    .ios-btn-primary {
+      background: #0a84ff;
+      color: #ffffff;
+      transition: all 0.2s var(--apple-ease);
+    }
+    .ios-btn-primary:hover {
+      background: #0071e3;
+    }
+    .ios-btn-primary:active {
+      transform: scale(0.97);
+    }
+    .ios-btn-secondary {
+      background: #2c2c2e;
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.2s var(--apple-ease);
+    }
+    .ios-btn-secondary:hover {
+      background: #3a3a3c;
+    }
+    .ios-btn-secondary:active {
+      transform: scale(0.96);
+    }
+    .ios-btn-danger {
       background: rgba(255, 69, 58, 0.15);
       color: #ff453a;
-      border: 1px solid rgba(255, 69, 58, 0.3);
-      transition: all 0.25s var(--apple-ease);
+      border: 1px solid rgba(255, 69, 58, 0.25);
+      transition: all 0.2s var(--apple-ease);
     }
-    .apple-btn-danger:hover {
+    .ios-btn-danger:hover {
       background: rgba(255, 69, 58, 0.25);
-      border-color: rgba(255, 69, 58, 0.5);
     }
-    .drop-active {
-      border-color: #0071e3 !important;
-      background-color: rgba(0, 113, 227, 0.08) !important;
+    .ios-btn-danger:active {
+      transform: scale(0.96);
     }
+    /* iOS Switch */
+    .ios-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 30px;
+      flex-shrink: 0;
+    }
+    .ios-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .ios-switch-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #39393d;
+      transition: background-color 0.25s var(--apple-ease);
+      border-radius: 30px;
+    }
+    .ios-switch-slider:before {
+      position: absolute;
+      content: "";
+      height: 26px;
+      width: 26px;
+      left: 2px;
+      bottom: 2px;
+      background-color: #ffffff;
+      transition: transform 0.25s var(--apple-ease);
+      border-radius: 50%;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    }
+    input:checked + .ios-switch-slider {
+      background-color: #30d158;
+    }
+    input:checked + .ios-switch-slider:before {
+      transform: translateX(20px);
+    }
+    /* Native style slider */
     input[type=range] {
       -webkit-appearance: none;
-      background: rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.18);
       border-radius: 9999px;
-      height: 4px;
+      height: 6px;
     }
     input[type=range]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 14px;
-      height: 14px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       background: #ffffff;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
@@ -838,316 +895,421 @@ INDEX_HTML = """<!DOCTYPE html>
       transition: transform 0.15s ease;
     }
     input[type=range]::-webkit-slider-thumb:hover {
-      transform: scale(1.2);
+      transform: scale(1.15);
+    }
+    .drop-active {
+      border-color: #0a84ff !important;
+      background: rgba(10, 132, 255, 0.08) !important;
     }
   </style>
 </head>
 <body class="min-h-screen flex flex-col antialiased selection:bg-blue-600 selection:text-white pb-12">
 
-  <div class="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[320px] bg-gradient-to-b from-blue-600/10 via-zinc-900/0 to-transparent blur-3xl pointer-events-none -z-10"></div>
-
-  <!-- Navigation Bar -->
-  <header class="sticky top-0 z-40 px-4 py-3 sm:px-8 border-b border-white/5 bg-black/70 backdrop-blur-2xl">
-    <div class="max-w-6xl mx-auto flex items-center justify-between">
+  <!-- Apple Navigation Bar -->
+  <header class="sticky top-0 z-40 px-4 py-3 sm:px-8 border-b border-white/10 bg-[#000000]/90 backdrop-blur-xl">
+    <div class="max-w-5xl mx-auto flex items-center justify-between gap-4">
+      
+      <!-- Brand & Status -->
       <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/20">
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <div class="w-8 h-8 rounded-xl bg-[#1c1c1e] border border-white/10 flex items-center justify-center text-white">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         </div>
         <div>
-          <h1 class="text-sm font-semibold tracking-tight text-white leading-none">PiMedia</h1>
-          <p class="text-[11px] text-zinc-400 font-mono mt-0.5" id="hostIp">Connecting...</p>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold tracking-tight text-white leading-none">PiMedia</span>
+            <div id="statusDot" class="w-2 h-2 rounded-full bg-zinc-500"></div>
+          </div>
+          <p class="text-[11px] text-[#8e8e93] font-mono mt-0.5" id="hostIp">Connecting...</p>
         </div>
       </div>
 
-      <div class="hidden sm:flex items-center bg-zinc-900/80 p-1 rounded-full border border-white/5 text-xs">
-        <button onclick="switchView('remote')" id="tabViewRemote" class="px-4 py-1.5 rounded-full bg-zinc-800 text-white font-medium transition shadow-sm">Remote</button>
-        <button onclick="switchView('media')" id="tabViewMedia" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Media</button>
-        <button onclick="switchView('stream')" id="tabViewStream" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Stream</button>
-        <button onclick="switchView('settings')" id="tabViewSettings" class="px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition">Settings</button>
+      <!-- Segmented Desktop Navigation -->
+      <div class="hidden sm:flex items-center bg-[#1c1c1e] p-1 rounded-full border border-white/10 text-xs">
+        <button onclick="switchView('remote')" id="tabViewRemote" class="px-4 py-1.5 rounded-full bg-[#2c2c2e] text-white font-medium transition">Remote</button>
+        <button onclick="switchView('media')" id="tabViewMedia" class="px-4 py-1.5 rounded-full text-[#8e8e93] hover:text-white transition">Library</button>
+        <button onclick="switchView('stream')" id="tabViewStream" class="px-4 py-1.5 rounded-full text-[#8e8e93] hover:text-white transition">Stream</button>
+        <button onclick="switchView('settings')" id="tabViewSettings" class="px-4 py-1.5 rounded-full text-[#8e8e93] hover:text-white transition">Settings</button>
       </div>
 
+      <!-- Quick Actions -->
       <div class="flex items-center gap-2">
-        <button onclick="toggleDisplayPower()" id="displayPowerBtn" class="p-2 rounded-full bg-zinc-900 border border-white/5 text-zinc-300 hover:text-white transition" title="Toggle display power">
+        <button onclick="toggleDisplayPower()" id="displayPowerBtn" class="p-2 rounded-full bg-[#1c1c1e] border border-white/10 text-[#8e8e93] hover:text-white transition" title="Toggle display power">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
         </button>
-        <div id="statusBadge" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-zinc-900 text-zinc-400 border border-white/5">
-          <span class="w-2 h-2 rounded-full bg-zinc-500" id="statusDot"></span>
-          <span id="statusText">Idle</span>
-        </div>
-        <button onclick="refreshAll()" class="p-2 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 transition" title="Refresh">
+        <button onclick="refreshAll()" class="p-2 rounded-full bg-[#1c1c1e] border border-white/10 text-[#8e8e93] hover:text-white transition" title="Refresh">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
         </button>
       </div>
     </div>
   </header>
 
-  <!-- Mobile Navigation Bar -->
+  <!-- Mobile Segmented Navigation -->
   <div class="sm:hidden px-4 pt-3">
-    <div class="flex items-center justify-between bg-zinc-900/90 p-1 rounded-full border border-white/5 text-xs w-full">
-      <button onclick="switchView('remote')" id="tabViewRemoteMobile" class="flex-1 py-1.5 rounded-full bg-zinc-800 text-white font-medium text-center transition">Remote</button>
-      <button onclick="switchView('media')" id="tabViewMediaMobile" class="flex-1 py-1.5 rounded-full text-zinc-400 hover:text-white text-center transition">Media</button>
-      <button onclick="switchView('stream')" id="tabViewStreamMobile" class="flex-1 py-1.5 rounded-full text-zinc-400 hover:text-white text-center transition">Stream</button>
-      <button onclick="switchView('settings')" id="tabViewSettingsMobile" class="flex-1 py-1.5 rounded-full text-zinc-400 hover:text-white text-center transition">Settings</button>
+    <div class="flex items-center justify-between bg-[#1c1c1e] p-1 rounded-full border border-white/10 text-xs w-full">
+      <button onclick="switchView('remote')" id="tabViewRemoteMobile" class="flex-1 py-1.5 rounded-full bg-[#2c2c2e] text-white font-medium text-center transition">Remote</button>
+      <button onclick="switchView('media')" id="tabViewMediaMobile" class="flex-1 py-1.5 rounded-full text-[#8e8e93] hover:text-white text-center transition">Library</button>
+      <button onclick="switchView('stream')" id="tabViewStreamMobile" class="flex-1 py-1.5 rounded-full text-[#8e8e93] hover:text-white text-center transition">Stream</button>
+      <button onclick="switchView('settings')" id="tabViewSettingsMobile" class="flex-1 py-1.5 rounded-full text-[#8e8e93] hover:text-white text-center transition">Settings</button>
     </div>
   </div>
 
-  <main class="max-w-5xl mx-auto px-4 py-6 sm:px-6 flex-1 w-full space-y-6">
+  <main class="max-w-4xl mx-auto px-4 py-6 sm:px-6 flex-1 w-full space-y-6">
 
-    <!-- VIEW: Remote & Now Playing -->
+    <!-- VIEW 1: Remote (Control Center Media Player + Apple TV Clickpad) -->
     <div id="viewRemote" class="space-y-6">
-      <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div class="space-y-1.5">
-            <span class="text-[11px] font-semibold tracking-widest text-blue-400 uppercase font-mono">Playback</span>
-            <h2 class="text-xl sm:text-2xl font-semibold text-white tracking-tight truncate max-w-lg" id="nowPlayingText">No active playback</h2>
+      
+      <!-- Apple Control Center Media Player Card -->
+      <section class="ios-panel p-6 sm:p-7 space-y-6">
+        
+        <!-- Media Header & Artwork -->
+        <div class="flex items-center gap-4">
+          <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-[#2c2c2e] border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0" id="nowPlayingArt">
+            <svg class="w-8 h-8 text-[#8e8e93]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
           </div>
-          <div class="flex items-center gap-3 text-xs font-mono text-zinc-400 bg-black/40 px-3.5 py-1.5 rounded-xl border border-white/5 self-start sm:self-center">
-            <span id="posDuration">0:00 / 0:00</span>
-            <span class="text-zinc-600">&bull;</span>
-            <span id="storageInfo">Disk: --</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-medium text-[#8e8e93] uppercase tracking-wider font-mono" id="playbackStateText">Idle</p>
+            <h2 class="text-lg sm:text-xl font-semibold text-white tracking-tight truncate" id="nowPlayingText">No active media</h2>
+            <p class="text-xs text-[#8e8e93] font-mono mt-0.5" id="storageSummary">Ready to play</p>
           </div>
-        </div>
-
-        <!-- Controls Row -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pt-4 border-t border-white/5">
-          <div class="flex items-center gap-3 justify-center sm:justify-start">
-            <button onclick="controlAction('prev')" class="apple-pill p-3.5 rounded-2xl text-zinc-200 active:scale-95" title="Previous">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7"/></svg>
-            </button>
-            <button id="playBtn" onclick="controlAction('start')" class="apple-btn-primary px-7 py-3.5 rounded-2xl text-white font-medium flex items-center gap-2.5 shadow-lg active:scale-95">
-              <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-              <span>Play</span>
-            </button>
-            <button id="pauseBtn" onclick="controlAction('pause')" class="apple-pill p-3.5 rounded-2xl text-zinc-200 active:scale-95" title="Pause">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M10 9v6m4-6v6"/></svg>
-            </button>
-            <button id="stopBtn" onclick="controlAction('stop')" class="apple-btn-danger p-3.5 rounded-2xl active:scale-95" title="Stop">
-              <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
-            </button>
-            <button onclick="controlAction('next')" class="apple-pill p-3.5 rounded-2xl text-zinc-200 active:scale-95" title="Next">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 5l7 7-7 7"/></svg>
-            </button>
-          </div>
-
-          <div class="flex items-center gap-6 justify-center sm:justify-end">
-            <div class="flex items-center gap-2.5">
-              <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
-              <input type="range" id="volumeSlider" min="0" max="100" value="100" onchange="updateVolume(this.value)" class="w-20 sm:w-24" />
-            </div>
-
-            <div class="flex items-center gap-2 text-xs text-zinc-400">
-              <span>Interval:</span>
-              <select id="slideDuration" onchange="updateDuration(this.value)" class="bg-black/60 border border-white/10 rounded-xl px-2.5 py-1.5 text-zinc-200 text-xs focus:outline-none">
-                <option value="3">3s</option>
-                <option value="5">5s</option>
-                <option value="10">10s</option>
-                <option value="15">15s</option>
-                <option value="30">30s</option>
-              </select>
-            </div>
-
-            <button onclick="controlAction('fullscreen')" class="apple-pill p-2.5 rounded-xl text-zinc-300" title="Toggle Fullscreen">
+          <div class="flex items-center gap-1.5">
+            <button onclick="controlAction('fullscreen')" class="ios-btn-secondary p-2.5 rounded-full" title="Toggle Fullscreen">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
             </button>
           </div>
         </div>
+
+        <!-- Scrubber Bar -->
+        <div class="space-y-1.5">
+          <div class="w-full bg-[#2c2c2e] h-2 rounded-full cursor-pointer relative overflow-hidden" id="scrubberTrack" onclick="handleScrub(event)">
+            <div class="bg-white h-full transition-all duration-150 rounded-full" id="scrubberFill" style="width: 0%"></div>
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-[#8e8e93] font-mono">
+            <span id="posTime">0:00</span>
+            <span id="durTime">0:00</span>
+          </div>
+        </div>
+
+        <!-- Transport Controls -->
+        <div class="flex items-center justify-center gap-4 sm:gap-6 pt-2">
+          <button onclick="seekRelative(-10)" class="ios-btn-secondary p-3 rounded-full" title="Skip backward 10s">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"/></svg>
+          </button>
+          
+          <button onclick="controlAction('prev')" class="ios-btn-secondary p-3.5 rounded-full" title="Previous item">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7"/></svg>
+          </button>
+
+          <button id="mainPlayBtn" onclick="togglePlayPause()" class="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg" title="Play / Pause">
+            <svg id="playIcon" class="w-6 h-6 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg id="pauseIcon" class="w-6 h-6 fill-current hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+
+          <button onclick="controlAction('next')" class="ios-btn-secondary p-3.5 rounded-full" title="Next item">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 5l7 7-7 7"/></svg>
+          </button>
+
+          <button onclick="seekRelative(10)" class="ios-btn-secondary p-3 rounded-full" title="Skip forward 10s">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 005 8v8a1 1 0 001.6.8l5.334-4zM19.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.334-4z"/></svg>
+          </button>
+        </div>
+
+        <!-- Volume & Interval Sliders -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-white/10">
+          
+          <!-- Volume Capsule Slider -->
+          <div class="ios-tile p-3.5 flex items-center gap-3">
+            <svg class="w-4 h-4 text-[#8e8e93]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+            <input type="range" id="volumeSlider" min="0" max="100" value="100" onchange="updateVolume(this.value)" class="flex-1" />
+            <svg class="w-4 h-4 text-[#8e8e93]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+          </div>
+
+          <!-- Slideshow Speed Picker -->
+          <div class="ios-tile p-3.5 flex items-center justify-between">
+            <span class="text-xs text-[#8e8e93]">Slide Duration</span>
+            <select id="slideDuration" onchange="updateDuration(this.value)" class="bg-[#1c1c1e] border border-white/10 text-xs text-white rounded-lg px-2.5 py-1 focus:outline-none">
+              <option value="3">3s</option>
+              <option value="5">5s</option>
+              <option value="10">10s</option>
+              <option value="15">15s</option>
+              <option value="30">30s</option>
+            </select>
+          </div>
+        </div>
       </section>
 
-      <!-- Upload Zone -->
+      <!-- Apple TV Remote Clickpad -->
+      <section class="ios-panel p-6 sm:p-7 flex flex-col items-center">
+        <div class="text-center space-y-1 mb-6">
+          <h3 class="text-sm font-semibold text-white">Apple TV Clickpad</h3>
+          <p class="text-xs text-[#8e8e93]">Tactile navigation wheel for displays and projectors</p>
+        </div>
+
+        <!-- Circular D-Pad -->
+        <div class="relative w-56 h-56 sm:w-64 sm:h-64 rounded-full bg-[#2c2c2e] border border-white/10 p-2 shadow-2xl flex items-center justify-center">
+          
+          <!-- Top Button (Volume Up) -->
+          <button onclick="adjustVolume(5)" class="absolute top-2 left-1/2 -translate-x-1/2 w-16 h-12 flex items-center justify-center text-[#8e8e93] hover:text-white active:scale-95 transition" title="Volume Up">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7"/></svg>
+          </button>
+
+          <!-- Bottom Button (Volume Down) -->
+          <button onclick="adjustVolume(-5)" class="absolute bottom-2 left-1/2 -translate-x-1/2 w-16 h-12 flex items-center justify-center text-[#8e8e93] hover:text-white active:scale-95 transition" title="Volume Down">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+
+          <!-- Left Button (Previous Track / Rewind) -->
+          <button onclick="controlAction('prev')" class="absolute left-2 top-1/2 -translate-y-1/2 w-12 h-16 flex items-center justify-center text-[#8e8e93] hover:text-white active:scale-95 transition" title="Previous Track">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+          </button>
+
+          <!-- Right Button (Next Track / Forward) -->
+          <button onclick="controlAction('next')" class="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-16 flex items-center justify-center text-[#8e8e93] hover:text-white active:scale-95 transition" title="Next Track">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+          </button>
+
+          <!-- Center Select Button -->
+          <button onclick="togglePlayPause()" class="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-[#1c1c1e] border border-white/10 hover:bg-[#3a3a3c] active:scale-90 transition flex items-center justify-center text-white shadow-inner" title="Select / Play / Pause">
+            <span class="text-xs font-semibold tracking-wider uppercase font-mono text-[#8e8e93]">Select</span>
+          </button>
+        </div>
+
+        <!-- Auxiliary Buttons Cluster -->
+        <div class="flex items-center gap-4 mt-6">
+          <button onclick="controlAction('stop')" class="ios-btn-danger px-5 py-2.5 rounded-full text-xs font-medium flex items-center gap-2" title="Stop Playback">
+            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+            <span>Stop</span>
+          </button>
+          
+          <button onclick="toggleDisplayPower()" class="ios-btn-secondary px-5 py-2.5 rounded-full text-xs font-medium flex items-center gap-2" title="Power Display">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <span>Display</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Files Upload Zone -->
       <section>
-        <div id="dropZone" class="border border-dashed border-white/10 hover:border-blue-500/50 bg-zinc-950/40 rounded-3xl p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-3">
+        <div id="dropZone" class="border border-dashed border-white/15 hover:border-white/30 bg-[#1c1c1e] rounded-3xl p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-3">
           <input type="file" id="fileInput" multiple accept="image/*,video/*,audio/*" class="hidden" />
-          <div class="w-12 h-12 rounded-2xl bg-zinc-900 border border-white/5 flex items-center justify-center text-blue-400 shadow-inner">
+          <div class="w-12 h-12 rounded-2xl bg-[#2c2c2e] border border-white/10 flex items-center justify-center text-[#0a84ff]">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
           </div>
           <div>
-            <p class="text-sm font-medium text-zinc-200">Drag files here or select to upload</p>
-            <p class="text-xs text-zinc-500 mt-0.5">Supports MP4, MOV, MKV, WebM, JPG, PNG, WebP, MP3, FLAC, WAV</p>
+            <p class="text-sm font-medium text-white">Drag files here or tap to upload</p>
+            <p class="text-xs text-[#8e8e93] mt-0.5">MP4, MOV, MKV, WebM, JPG, PNG, WebP, MP3, FLAC, WAV</p>
           </div>
           <div id="uploadProgressContainer" class="w-full max-w-sm hidden mt-3">
-            <div class="w-full bg-zinc-900 rounded-full h-1.5 overflow-hidden">
-              <div id="uploadProgressBar" class="bg-blue-500 h-full transition-all duration-200" style="width: 0%"></div>
+            <div class="w-full bg-[#2c2c2e] rounded-full h-1.5 overflow-hidden">
+              <div id="uploadProgressBar" class="bg-[#0a84ff] h-full transition-all duration-200" style="width: 0%"></div>
             </div>
-            <p id="uploadStatusText" class="text-xs text-zinc-400 mt-2 font-mono">Uploading...</p>
+            <p id="uploadStatusText" class="text-xs text-[#8e8e93] mt-2 font-mono">Uploading...</p>
           </div>
         </div>
       </section>
     </div>
 
-    <!-- VIEW: Media Library Grid -->
+    <!-- VIEW 2: Media Library Grid -->
     <div id="viewMedia" class="space-y-6 hidden">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div class="flex items-center gap-2.5">
-          <h3 class="text-lg font-semibold text-white tracking-tight">Media Library</h3>
-          <span class="text-xs px-2.5 py-0.5 rounded-full bg-zinc-900 text-zinc-400 font-mono border border-white/5" id="fileCountBadge">0</span>
+          <h3 class="text-lg font-semibold text-white tracking-tight">Library</h3>
+          <span class="text-xs px-2.5 py-0.5 rounded-full bg-[#1c1c1e] text-[#8e8e93] font-mono border border-white/10" id="fileCountBadge">0</span>
         </div>
 
         <div class="flex items-center gap-3">
           <div class="relative">
-            <input type="text" id="searchInput" placeholder="Search..." oninput="filterMedia()" class="bg-zinc-900/90 border border-white/10 text-zinc-200 text-xs rounded-full px-3.5 py-2 pl-9 focus:outline-none focus:border-blue-500 w-48" />
-            <svg class="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input type="text" id="searchInput" placeholder="Search..." oninput="filterMedia()" class="bg-[#1c1c1e] border border-white/10 text-white text-xs rounded-full px-3.5 py-2 pl-9 focus:outline-none focus:border-[#0a84ff] w-48" />
+            <svg class="w-4 h-4 text-[#8e8e93] absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
           </div>
-          <div class="flex bg-zinc-900/90 p-1 rounded-full border border-white/5 text-xs">
-            <button onclick="setTab('all')" id="tabAll" class="px-3 py-1 rounded-full bg-zinc-800 text-white font-medium transition">All</button>
-            <button onclick="setTab('video')" id="tabVideo" class="px-3 py-1 rounded-full text-zinc-400 hover:text-white transition">Videos</button>
-            <button onclick="setTab('image')" id="tabImage" class="px-3 py-1 rounded-full text-zinc-400 hover:text-white transition">Images</button>
-            <button onclick="setTab('audio')" id="tabAudio" class="px-3 py-1 rounded-full text-zinc-400 hover:text-white transition">Audio</button>
+          <div class="flex bg-[#1c1c1e] p-1 rounded-full border border-white/10 text-xs">
+            <button onclick="setTab('all')" id="tabAll" class="px-3 py-1 rounded-full bg-[#2c2c2e] text-white font-medium transition">All</button>
+            <button onclick="setTab('video')" id="tabVideo" class="px-3 py-1 rounded-full text-[#8e8e93] hover:text-white transition">Videos</button>
+            <button onclick="setTab('image')" id="tabImage" class="px-3 py-1 rounded-full text-[#8e8e93] hover:text-white transition">Photos</button>
+            <button onclick="setTab('audio')" id="tabAudio" class="px-3 py-1 rounded-full text-[#8e8e93] hover:text-white transition">Audio</button>
           </div>
         </div>
       </div>
 
       <div id="mediaGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></div>
-      <div id="emptyState" class="hidden py-16 text-center text-zinc-500 space-y-2">
-        <p class="text-sm">No media files in library</p>
-        <p class="text-xs text-zinc-600">Drag media files into the upload area to begin playback</p>
+      
+      <div id="emptyState" class="hidden py-16 text-center text-[#8e8e93] space-y-2">
+        <p class="text-sm">No media in library</p>
+        <p class="text-xs text-[#636366]">Drag media into the upload area above to start</p>
       </div>
     </div>
 
-    <!-- VIEW: Web Video & Stream -->
+    <!-- VIEW 3: Web Stream -->
     <div id="viewStream" class="space-y-6 hidden">
-      <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
-        <div class="space-y-1.5">
-          <span class="text-[11px] font-semibold tracking-widest text-rose-400 uppercase font-mono">Stream</span>
-          <h3 class="text-lg font-semibold text-white">Web Stream</h3>
-          <p class="text-xs text-zinc-400">Play a direct video URL, YouTube link, or stream on the display.</p>
+      <section class="ios-panel p-6 sm:p-8 space-y-6">
+        <div class="space-y-1">
+          <h3 class="text-lg font-semibold text-white tracking-tight">Web Stream</h3>
+          <p class="text-xs text-[#8e8e93]">Stream online video directly to the display using mpv and yt-dlp.</p>
         </div>
 
-        <div class="space-y-3 pt-2">
+        <div class="space-y-4 pt-2">
           <div class="flex flex-col sm:flex-row items-center gap-3">
-            <input type="url" id="streamUrlInput" placeholder="https://www.youtube.com/watch?v=... or stream URL" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-2xl px-4 py-3.5 w-full focus:outline-none focus:border-blue-500" />
-            <button onclick="startStreamUrl()" class="apple-btn-primary px-6 py-3.5 rounded-2xl text-xs font-semibold text-white whitespace-nowrap w-full sm:w-auto flex items-center justify-center gap-2">
+            <div class="relative w-full">
+              <input type="url" id="streamUrlInput" placeholder="https://www.youtube.com/watch?v=... or direct video link" class="bg-[#2c2c2e] border border-white/10 text-xs text-white rounded-2xl px-4 py-3.5 pl-10 w-full focus:outline-none focus:border-[#0a84ff]" />
+              <svg class="w-4 h-4 text-[#8e8e93] absolute left-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+            </div>
+            <button onclick="startStreamUrl()" class="ios-btn-primary px-6 py-3.5 rounded-2xl text-xs font-semibold whitespace-nowrap w-full sm:w-auto flex items-center justify-center gap-2">
               <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-              <span>Play URL</span>
+              <span>Play to Screen</span>
             </button>
           </div>
-          <div class="flex items-center gap-2 text-[11px] text-zinc-500 font-mono">
-            <span>Plays through mpv and yt-dlp</span>
+
+          <div class="flex flex-wrap gap-2 text-xs">
+            <button onclick="fillPreset('https://www.youtube.com/watch?v=dQw4w9WgXcQ')" class="ios-btn-secondary px-3 py-1.5 rounded-full text-[11px]">YouTube Sample</button>
+            <button onclick="fillPreset('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4')" class="ios-btn-secondary px-3 py-1.5 rounded-full text-[11px]">Direct MP4 Sample</button>
           </div>
         </div>
       </section>
     </div>
 
-    <!-- VIEW: Settings, Wi-Fi, Display & Audio -->
+    <!-- VIEW 4: iOS Inset Grouped Settings -->
     <div id="viewSettings" class="space-y-6 hidden">
-      <!-- Wi-Fi Networking Card -->
-      <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
-        <div class="flex items-center justify-between">
-          <div class="space-y-1">
-            <span class="text-[11px] font-semibold tracking-widest text-blue-400 uppercase font-mono">Network</span>
-            <h3 class="text-lg font-semibold text-white">Wireless Networks</h3>
-            <p class="text-xs text-zinc-400">Scan and connect to nearby Wi-Fi networks.</p>
-          </div>
-          <button onclick="scanWifi()" id="scanWifiBtn" class="apple-pill px-4 py-2 rounded-xl text-xs font-medium text-white flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-            <span>Scan Wi-Fi</span>
-          </button>
-        </div>
-        <div id="wifiList" class="space-y-2.5">
-          <div class="text-center py-6 text-zinc-500 text-xs font-mono">Select Scan Wi-Fi to list nearby networks</div>
-        </div>
-      </section>
-
-      <!-- Playback Options & Background Audio -->
-      <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
-        <div class="space-y-1">
-          <span class="text-[11px] font-semibold tracking-widest text-purple-400 uppercase font-mono">Playback Options</span>
-          <h3 class="text-lg font-semibold text-white">Transitions and Audio</h3>
-          <p class="text-xs text-zinc-400">Configure photo motion effects, TV remote control, and background audio.</p>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-          <!-- Ken Burns Motion -->
-          <div class="apple-card rounded-2xl p-5 space-y-3 flex flex-col justify-between">
-            <div class="space-y-1">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-white">Photo Drift</span>
-                <input type="checkbox" id="kenBurnsToggle" onchange="toggleKenBurns(this.checked)" class="w-4 h-4 rounded text-blue-600 bg-zinc-800 border-zinc-700" />
-              </div>
-              <p class="text-[11px] text-zinc-400">Pans and zooms photos slowly during slideshows.</p>
+      
+      <!-- Group 1: Wireless Networks -->
+      <div class="space-y-2">
+        <span class="text-[11px] font-semibold tracking-wider text-[#8e8e93] uppercase font-mono px-4">Wireless Networks</span>
+        <div class="ios-panel p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h4 class="text-sm font-semibold text-white">Nearby Wi-Fi</h4>
+              <p class="text-xs text-[#8e8e93]">Scan and connect to local wireless networks</p>
             </div>
+            <button onclick="scanWifi()" id="scanWifiBtn" class="ios-btn-secondary px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              <span>Scan</span>
+            </button>
           </div>
-
-          <!-- HDMI-CEC Remote -->
-          <div class="apple-card rounded-2xl p-5 space-y-3 flex flex-col justify-between">
-            <div class="space-y-1">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold text-white">HDMI-CEC TV Remote</span>
-                <input type="checkbox" id="cecToggle" onchange="toggleCec(this.checked)" class="w-4 h-4 rounded text-blue-600 bg-zinc-800 border-zinc-700" />
-              </div>
-              <p class="text-[11px] text-zinc-400">Control playback and volume using a TV remote.</p>
-            </div>
-          </div>
-
-          <!-- Background Audio Selection -->
-          <div class="apple-card rounded-2xl p-5 space-y-3 sm:col-span-2">
-            <label class="text-xs font-semibold text-white">Background Audio Track</label>
-            <div class="flex items-center gap-2">
-              <select id="bgAudioSelect" onchange="updateBgAudio(this.value)" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-xl px-3.5 py-2.5 w-full focus:outline-none focus:border-blue-500">
-                <option value="">None</option>
-              </select>
-            </div>
-            <p class="text-[11px] text-zinc-500">Selected track loops in the background during image slideshows.</p>
+          <div id="wifiList" class="space-y-2">
+            <div class="text-center py-4 text-[#8e8e93] text-xs font-mono">Select Scan to discover nearby Wi-Fi networks</div>
           </div>
         </div>
-      </section>
+      </div>
 
-      <!-- Display Timed Sleep & Security -->
-      <section class="apple-glass rounded-3xl p-6 sm:p-8 space-y-6">
-        <div class="space-y-1">
-          <span class="text-[11px] font-semibold tracking-widest text-emerald-400 uppercase font-mono">Display and Security</span>
-          <h3 class="text-lg font-semibold text-white">Display Sleep and Security</h3>
-          <p class="text-xs text-zinc-400">Configure display timers and set an optional access PIN.</p>
+      <!-- Group 2: Playback & Motion -->
+      <div class="space-y-2">
+        <span class="text-[11px] font-semibold tracking-wider text-[#8e8e93] uppercase font-mono px-4">Playback &amp; Hardware</span>
+        <div class="ios-panel divide-y divide-white/10 overflow-hidden">
+          
+          <!-- Photo Drift Switch -->
+          <div class="p-4 sm:p-5 flex items-center justify-between">
+            <div class="space-y-0.5">
+              <h4 class="text-sm font-semibold text-white">Photo Pan &amp; Zoom Drift</h4>
+              <p class="text-xs text-[#8e8e93]">Slowly moves and scales photos during slideshow playback</p>
+            </div>
+            <label class="ios-switch">
+              <input type="checkbox" id="kenBurnsToggle" onchange="toggleKenBurns(this.checked)" />
+              <span class="ios-switch-slider"></span>
+            </label>
+          </div>
+
+          <!-- HDMI-CEC Switch -->
+          <div class="p-4 sm:p-5 flex items-center justify-between">
+            <div class="space-y-0.5">
+              <h4 class="text-sm font-semibold text-white">HDMI-CEC Remote</h4>
+              <p class="text-xs text-[#8e8e93]">Control playback and volume with your TV remote</p>
+            </div>
+            <label class="ios-switch">
+              <input type="checkbox" id="cecToggle" onchange="toggleCec(this.checked)" />
+              <span class="ios-switch-slider"></span>
+            </label>
+          </div>
+
+          <!-- Background Audio Track -->
+          <div class="p-4 sm:p-5 space-y-2">
+            <h4 class="text-sm font-semibold text-white">Background Audio</h4>
+            <p class="text-xs text-[#8e8e93]">Loops selected audio track during photo slideshows</p>
+            <select id="bgAudioSelect" onchange="updateBgAudio(this.value)" class="bg-[#2c2c2e] border border-white/10 text-xs text-white rounded-xl px-3.5 py-2.5 w-full focus:outline-none focus:border-[#0a84ff] mt-2">
+              <option value="">None (Silent)</option>
+            </select>
+          </div>
         </div>
+      </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-          <!-- Timed Sleep Schedule -->
-          <div class="apple-card rounded-2xl p-5 space-y-3">
+      <!-- Group 3: Display Timer & PIN -->
+      <div class="space-y-2">
+        <span class="text-[11px] font-semibold tracking-wider text-[#8e8e93] uppercase font-mono px-4">Schedule &amp; Security</span>
+        <div class="ios-panel divide-y divide-white/10 overflow-hidden">
+          
+          <!-- Timed Power Schedule -->
+          <div class="p-4 sm:p-5 space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-white">Display Schedule</span>
-              <input type="checkbox" id="schedToggle" onchange="saveSchedule()" class="w-4 h-4 rounded text-blue-600 bg-zinc-800 border-zinc-700" />
-            </div>
-            <div class="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <label class="text-[10px] text-zinc-400 uppercase font-mono">Sleep Time</label>
-                <input type="time" id="sleepTimeInput" value="23:00" onchange="saveSchedule()" class="bg-black/60 border border-white/10 rounded-lg px-2 py-1.5 text-zinc-200 text-xs w-full focus:outline-none" />
+              <div class="space-y-0.5">
+                <h4 class="text-sm font-semibold text-white">Display Power Schedule</h4>
+                <p class="text-xs text-[#8e8e93]">Automatically sleeps and wakes the HDMI output</p>
               </div>
-              <div>
-                <label class="text-[10px] text-zinc-400 uppercase font-mono">Wake Time</label>
-                <input type="time" id="wakeTimeInput" value="07:00" onchange="saveSchedule()" class="bg-black/60 border border-white/10 rounded-lg px-2 py-1.5 text-zinc-200 text-xs w-full focus:outline-none" />
+              <label class="ios-switch">
+                <input type="checkbox" id="schedToggle" onchange="saveSchedule()" />
+                <span class="ios-switch-slider"></span>
+              </label>
+            </div>
+            <div class="grid grid-cols-2 gap-3 pt-2 text-xs">
+              <div class="bg-[#2c2c2e] p-2.5 rounded-xl border border-white/5">
+                <label class="text-[10px] text-[#8e8e93] uppercase font-mono block mb-1">Sleep Time</label>
+                <input type="time" id="sleepTimeInput" value="23:00" onchange="saveSchedule()" class="bg-transparent text-white text-xs w-full focus:outline-none" />
+              </div>
+              <div class="bg-[#2c2c2e] p-2.5 rounded-xl border border-white/5">
+                <label class="text-[10px] text-[#8e8e93] uppercase font-mono block mb-1">Wake Time</label>
+                <input type="time" id="wakeTimeInput" value="07:00" onchange="saveSchedule()" class="bg-transparent text-white text-xs w-full focus:outline-none" />
               </div>
             </div>
           </div>
 
-          <!-- PIN Protection -->
-          <div class="apple-card rounded-2xl p-5 space-y-3">
-            <label class="text-xs font-semibold text-white">Access PIN</label>
-            <div class="flex items-center gap-2">
-              <input type="password" id="pinInput" placeholder="Leave blank for open access" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-xl px-3.5 py-2 w-full focus:outline-none focus:border-blue-500" />
-              <button onclick="savePin()" class="apple-btn-primary px-4 py-2 rounded-xl text-xs font-medium text-white">Save</button>
+          <!-- PIN Access -->
+          <div class="p-4 sm:p-5 space-y-3">
+            <div class="space-y-0.5">
+              <h4 class="text-sm font-semibold text-white">Access PIN</h4>
+              <p class="text-xs text-[#8e8e93]">Restrict remote playback and file uploads</p>
             </div>
-            <p class="text-[11px] text-zinc-500">Requires a PIN for remote playback and file uploads.</p>
+            <div class="flex items-center gap-2">
+              <input type="password" id="pinInput" placeholder="Leave empty for open access" class="bg-[#2c2c2e] border border-white/10 text-xs text-white rounded-xl px-3.5 py-2.5 w-full focus:outline-none focus:border-[#0a84ff]" />
+              <button onclick="savePin()" class="ios-btn-primary px-4 py-2.5 rounded-xl text-xs font-medium">Save</button>
+            </div>
           </div>
         </div>
-      </section>
+      </div>
+
+      <!-- Group 4: Diagnostics -->
+      <div class="space-y-2">
+        <span class="text-[11px] font-semibold tracking-wider text-[#8e8e93] uppercase font-mono px-4">System Diagnostics</span>
+        <div class="ios-panel p-5 space-y-3 text-xs font-mono">
+          <div class="flex justify-between py-1 border-b border-white/5">
+            <span class="text-[#8e8e93]">IP Address</span>
+            <span class="text-white" id="diagIp">127.0.0.1</span>
+          </div>
+          <div class="flex justify-between py-1 border-b border-white/5">
+            <span class="text-[#8e8e93]">CPU Temperature</span>
+            <span class="text-white" id="diagTemp">-- &deg;C</span>
+          </div>
+          <div class="flex justify-between py-1">
+            <span class="text-[#8e8e93]">Storage Free</span>
+            <span class="text-white" id="diagDisk">-- GB</span>
+          </div>
+        </div>
+      </div>
+
     </div>
 
   </main>
 
-  <footer class="border-t border-white/5 py-4 px-6 text-center text-[11px] text-zinc-600 font-mono">
+  <footer class="border-t border-white/10 py-4 px-6 text-center text-[11px] text-[#636366] font-mono">
     PiMedia
   </footer>
 
   <!-- Connect Wi-Fi Modal -->
   <div id="wifiModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
-    <div class="apple-glass rounded-3xl p-6 sm:p-7 max-w-sm w-full space-y-4">
+    <div class="ios-panel p-6 sm:p-7 max-w-sm w-full space-y-4">
       <div class="space-y-1">
         <h4 class="text-base font-semibold text-white" id="modalSsidTitle">Connect to Wi-Fi</h4>
-        <p class="text-xs text-zinc-400">Enter network passphrase to connect.</p>
+        <p class="text-xs text-[#8e8e93]">Enter network password to join.</p>
       </div>
-      <input type="password" id="modalWifiPassword" placeholder="Passphrase" class="bg-black/60 border border-white/10 text-xs text-zinc-200 rounded-xl px-3.5 py-3 w-full focus:outline-none focus:border-blue-500" />
+      <input type="password" id="modalWifiPassword" placeholder="Password" class="bg-[#2c2c2e] border border-white/10 text-xs text-white rounded-xl px-3.5 py-3 w-full focus:outline-none focus:border-[#0a84ff]" />
       <div class="flex items-center justify-end gap-2.5 pt-2">
-        <button onclick="closeWifiModal()" class="apple-pill px-4 py-2 rounded-xl text-xs text-zinc-300">Cancel</button>
-        <button onclick="submitWifiConnect()" class="apple-btn-primary px-5 py-2 rounded-xl text-xs font-medium text-white">Connect</button>
+        <button onclick="closeWifiModal()" class="ios-btn-secondary px-4 py-2 rounded-xl text-xs">Cancel</button>
+        <button onclick="submitWifiConnect()" class="ios-btn-primary px-5 py-2 rounded-xl text-xs font-medium">Join</button>
       </div>
     </div>
   </div>
@@ -1157,6 +1319,9 @@ INDEX_HTML = """<!DOCTYPE html>
     let activeTab = 'all';
     let targetSsid = '';
     let currentPowerState = true;
+    let isPlaying = false;
+    let currentDuration = 0;
+    let currentPosition = 0;
 
     function switchView(viewName) {
       const views = ['Remote', 'Media', 'Stream', 'Settings'];
@@ -1167,12 +1332,12 @@ INDEX_HTML = """<!DOCTYPE html>
         
         if (v.toLowerCase() === viewName) {
           if (el) el.classList.remove('hidden');
-          if (tab) tab.className = 'px-4 py-1.5 rounded-full bg-zinc-800 text-white font-medium transition shadow-sm';
-          if (tabMobile) tabMobile.className = 'flex-1 py-1.5 rounded-full bg-zinc-800 text-white font-medium text-center transition';
+          if (tab) tab.className = 'px-4 py-1.5 rounded-full bg-[#2c2c2e] text-white font-medium transition';
+          if (tabMobile) tabMobile.className = 'flex-1 py-1.5 rounded-full bg-[#2c2c2e] text-white font-medium text-center transition';
         } else {
           if (el) el.classList.add('hidden');
-          if (tab) tab.className = 'px-4 py-1.5 rounded-full text-zinc-400 hover:text-white transition';
-          if (tabMobile) tabMobile.className = 'flex-1 py-1.5 rounded-full text-zinc-400 hover:text-white text-center transition';
+          if (tab) tab.className = 'px-4 py-1.5 rounded-full text-[#8e8e93] hover:text-white transition';
+          if (tabMobile) tabMobile.className = 'flex-1 py-1.5 rounded-full text-[#8e8e93] hover:text-white text-center transition';
         }
       });
     }
@@ -1186,33 +1351,56 @@ INDEX_HTML = """<!DOCTYPE html>
         const hostEl = document.getElementById('hostIp');
         if (hostEl) hostEl.textContent = `${data.system.ip}:5000`;
         
-        const storageEl = document.getElementById('storageInfo');
-        if (storageEl) storageEl.textContent = `Free: ${data.system.disk_free_gb} GB (${data.system.disk_used_percent}%)`;
+        const diagIp = document.getElementById('diagIp');
+        if (diagIp) diagIp.textContent = data.system.ip;
 
-        const badge = document.getElementById('statusBadge');
+        const diagTemp = document.getElementById('diagTemp');
+        if (diagTemp) diagTemp.textContent = (data.system.cpu_temp !== null) ? `${data.system.cpu_temp} °C` : 'N/A';
+
+        const diagDisk = document.getElementById('diagDisk');
+        if (diagDisk) diagDisk.textContent = `${data.system.disk_free_gb} GB free (${data.system.disk_used_percent}% used)`;
+
+        const storageSummary = document.getElementById('storageSummary');
+        if (storageSummary) storageSummary.textContent = `${data.system.media_count} items • ${data.system.disk_free_gb} GB free`;
+
         const dot = document.getElementById('statusDot');
-        const text = document.getElementById('statusText');
+        const stateText = document.getElementById('playbackStateText');
         const nowPlaying = document.getElementById('nowPlayingText');
-        const posDuration = document.getElementById('posDuration');
+        const playIcon = document.getElementById('playIcon');
+        const pauseIcon = document.getElementById('pauseIcon');
+
+        isPlaying = data.playback.is_running && !data.playback.paused;
+        currentDuration = data.playback.duration || 0;
+        currentPosition = data.playback.position || 0;
 
         if (data.playback.is_running) {
-          badge.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
-          dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
-          text.textContent = data.playback.paused ? 'Paused' : 'Playing';
+          dot.className = 'w-2 h-2 rounded-full bg-[#30d158] animate-pulse';
+          stateText.textContent = data.playback.paused ? 'Paused' : 'Playing';
           nowPlaying.textContent = data.playback.filename || 'Active Playlist';
-          posDuration.textContent = formatTime(data.playback.position) + ' / ' + formatTime(data.playback.duration);
+          if (isPlaying) {
+            playIcon.classList.add('hidden');
+            pauseIcon.classList.remove('hidden');
+          } else {
+            playIcon.classList.remove('hidden');
+            pauseIcon.classList.add('hidden');
+          }
         } else {
-          badge.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-zinc-900 text-zinc-400 border border-white/5';
           dot.className = 'w-2 h-2 rounded-full bg-zinc-500';
-          text.textContent = 'Idle';
-          nowPlaying.textContent = 'No active playback';
-          posDuration.textContent = '0:00 / 0:00';
+          stateText.textContent = 'Idle';
+          nowPlaying.textContent = 'No active media';
+          playIcon.classList.remove('hidden');
+          pauseIcon.classList.add('hidden');
         }
 
+        // Update progress bar
+        document.getElementById('posTime').textContent = formatTime(currentPosition);
+        document.getElementById('durTime').textContent = formatTime(currentDuration);
+        const percent = currentDuration > 0 ? (currentPosition / currentDuration) * 100 : 0;
+        document.getElementById('scrubberFill').style.width = `${percent}%`;
+
+        // Update settings controls
         const durSelect = document.getElementById('slideDuration');
-        if (durSelect && data.config.image_duration) {
-          durSelect.value = String(data.config.image_duration);
-        }
+        if (durSelect && data.config.image_duration) durSelect.value = String(data.config.image_duration);
 
         const kbToggle = document.getElementById('kenBurnsToggle');
         if (kbToggle) kbToggle.checked = Boolean(data.config.ken_burns);
@@ -1249,7 +1437,7 @@ INDEX_HTML = """<!DOCTYPE html>
       if (!select) return;
       const audioFiles = mediaItems.filter(m => m.type === 'audio');
       const currentVal = select.value;
-      select.innerHTML = '<option value="">None (Silent Slideshow)</option>' + audioFiles.map(a => `<option value="${a.name}">${a.name}</option>`).join('');
+      select.innerHTML = '<option value="">None (Silent)</option>' + audioFiles.map(a => `<option value="${a.name}">${a.name}</option>`).join('');
       select.value = currentVal;
     }
 
@@ -1287,34 +1475,34 @@ INDEX_HTML = """<!DOCTYPE html>
       empty.classList.add('hidden');
 
       grid.innerHTML = filtered.map(item => `
-        <div class="group relative apple-card rounded-2xl overflow-hidden flex flex-col">
-          <div class="relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden">
+        <div class="group ios-panel p-2.5 overflow-hidden flex flex-col justify-between">
+          <div class="relative w-full aspect-video bg-[#2c2c2e] rounded-xl flex items-center justify-center overflow-hidden">
             ${item.type === 'video' 
               ? `<video src="/media/${encodeURIComponent(item.name)}" class="w-full h-full object-cover" preload="metadata"></video>
                  <div class="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none group-hover:bg-black/10 transition">
-                   <div class="p-2.5 rounded-full bg-black/70 text-white backdrop-blur-md">
+                   <div class="p-2 rounded-full bg-black/70 text-white backdrop-blur">
                      <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                    </div>
                  </div>`
               : item.type === 'audio'
-              ? `<div class="w-full h-full flex flex-col items-center justify-center bg-zinc-900/80 text-blue-400">
+              ? `<div class="w-full h-full flex flex-col items-center justify-center text-[#0a84ff]">
                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
                  </div>`
               : `<img src="/media/${encodeURIComponent(item.name)}" class="w-full h-full object-cover" loading="lazy" />`
             }
-            <button onclick="playDirect('${item.name}')" class="absolute inset-0 z-10 opacity-0 group-hover:opacity-100 bg-blue-600/30 backdrop-blur-sm flex items-center justify-center transition text-xs font-semibold text-white gap-1.5">
+            <button onclick="playDirect('${item.name}')" class="absolute inset-0 z-10 opacity-0 group-hover:opacity-100 bg-[#0a84ff]/40 backdrop-blur-xs flex items-center justify-center transition text-xs font-semibold text-white gap-1.5">
               <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-              <span>Play Now</span>
+              <span>Play</span>
             </button>
-            <button onclick="deleteFile('${item.name}')" class="absolute top-2 right-2 z-20 p-1.5 rounded-full bg-black/60 hover:bg-rose-600 text-zinc-400 hover:text-white transition backdrop-blur opacity-0 group-hover:opacity-100" title="Delete">
+            <button onclick="deleteFile('${item.name}')" class="absolute top-1.5 right-1.5 z-20 p-1.5 rounded-full bg-black/60 hover:bg-[#ff453a] text-[#8e8e93] hover:text-white transition backdrop-blur opacity-0 group-hover:opacity-100" title="Delete">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
             </button>
           </div>
-          <div class="p-3 flex flex-col justify-between flex-1 gap-1">
-            <p class="text-xs font-medium text-zinc-200 truncate" title="${item.name}">${item.name}</p>
-            <div class="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
+          <div class="pt-2 px-1 flex flex-col justify-between flex-1">
+            <p class="text-xs font-medium text-white truncate" title="${item.name}">${item.name}</p>
+            <div class="flex items-center justify-between text-[10px] text-[#8e8e93] font-mono mt-1">
               <span>${formatBytes(item.size)}</span>
-              <span class="uppercase tracking-wider font-semibold text-zinc-400">${item.extension}</span>
+              <span class="uppercase tracking-wider text-[#636366] font-semibold">${item.extension}</span>
             </div>
           </div>
         </div>
@@ -1327,9 +1515,9 @@ INDEX_HTML = """<!DOCTYPE html>
         const el = document.getElementById('tab' + t);
         if (el) {
           if (t.toLowerCase() === tab) {
-            el.className = 'px-3 py-1 rounded-full bg-zinc-800 text-white font-medium transition';
+            el.className = 'px-3 py-1 rounded-full bg-[#2c2c2e] text-white font-medium transition';
           } else {
-            el.className = 'px-3 py-1 rounded-full text-zinc-400 hover:text-white transition';
+            el.className = 'px-3 py-1 rounded-full text-[#8e8e93] hover:text-white transition';
           }
         }
       });
@@ -1338,6 +1526,11 @@ INDEX_HTML = """<!DOCTYPE html>
 
     function filterMedia() {
       renderGrid();
+    }
+
+    async function togglePlayPause() {
+      await fetch('/api/playback/pause', { method: 'POST' });
+      fetchStatus();
     }
 
     async function controlAction(action) {
@@ -1349,6 +1542,31 @@ INDEX_HTML = """<!DOCTYPE html>
       } catch (err) {
         console.error(err);
       }
+    }
+
+    async function seekRelative(secs) {
+      try {
+        await fetch('/api/playback/seek', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ seconds: secs })
+        });
+        fetchStatus();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function handleScrub(e) {
+      if (!currentDuration) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const posRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const targetPos = posRatio * currentDuration;
+      fetch('/api/playback/seek', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ position: targetPos })
+      }).then(() => fetchStatus());
     }
 
     async function playDirect(filename) {
@@ -1365,20 +1583,22 @@ INDEX_HTML = """<!DOCTYPE html>
       }
     }
 
+    function fillPreset(url) {
+      document.getElementById('streamUrlInput').value = url;
+    }
+
     async function startStreamUrl() {
       const url = document.getElementById('streamUrlInput').value.trim();
-      if (!url) return alert('Please enter a stream or video URL');
+      if (!url) return;
       try {
-        const res = await fetch('/api/playback/stream', {
+        await fetch('/api/playback/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url })
         });
-        const d = await res.json();
-        alert(d.message || d.error);
         fetchStatus();
       } catch (err) {
-        alert('Failed to trigger stream playback');
+        console.error(err);
       }
     }
 
@@ -1392,6 +1612,14 @@ INDEX_HTML = """<!DOCTYPE html>
       } catch (err) {
         console.error(err);
       }
+    }
+
+    function adjustVolume(delta) {
+      const slider = document.getElementById('volumeSlider');
+      let val = parseInt(slider.value) + delta;
+      val = Math.max(0, Math.min(100, val));
+      slider.value = val;
+      updateVolume(val);
     }
 
     async function updateDuration(val) {
@@ -1450,7 +1678,6 @@ INDEX_HTML = """<!DOCTYPE html>
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ power: currentPowerState })
         });
-        alert(`Display turned ${currentPowerState ? 'ON' : 'OFF'}`);
       } catch (err) {
         console.error(err);
       }
@@ -1485,7 +1712,7 @@ INDEX_HTML = """<!DOCTYPE html>
       }
     }
 
-    // Dropzone Upload Handler
+    // Drag and Drop
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
 
@@ -1544,11 +1771,11 @@ INDEX_HTML = """<!DOCTYPE html>
       }, 1000);
     }
 
-    // Wi-Fi Scanning & Connection
+    // Wi-Fi Scanner
     async function scanWifi() {
       const list = document.getElementById('wifiList');
       const btn = document.getElementById('scanWifiBtn');
-      list.innerHTML = '<div class="text-center py-6 text-zinc-400 text-xs font-mono animate-pulse">Scanning nearby networks...</div>';
+      list.innerHTML = '<div class="text-center py-4 text-[#8e8e93] text-xs font-mono animate-pulse">Scanning nearby networks...</div>';
       btn.disabled = true;
 
       try {
@@ -1557,36 +1784,36 @@ INDEX_HTML = """<!DOCTYPE html>
         btn.disabled = false;
 
         if (!data || data.length === 0) {
-          list.innerHTML = '<div class="text-center py-6 text-zinc-500 text-xs font-mono">No Wi-Fi networks found</div>';
+          list.innerHTML = '<div class="text-center py-4 text-[#8e8e93] text-xs font-mono">No Wi-Fi networks detected</div>';
           return;
         }
 
         list.innerHTML = data.map(net => `
-          <div class="apple-card rounded-2xl p-3.5 flex items-center justify-between">
+          <div class="ios-tile p-3.5 flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-xl ${net.connected ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-300'} flex items-center justify-center">
+              <div class="w-8 h-8 rounded-xl ${net.connected ? 'bg-[#30d158]/20 text-[#30d158]' : 'bg-[#1c1c1e] text-[#8e8e93]'} flex items-center justify-center">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
               </div>
               <div>
                 <p class="text-xs font-semibold text-white">${net.ssid}</p>
-                <p class="text-[10px] text-zinc-400 font-mono">${net.security} &bull; ${net.signal}% signal ${net.connected ? '&bull; Connected' : ''}</p>
+                <p class="text-[10px] text-[#8e8e93] font-mono">${net.security} • ${net.signal}% signal ${net.connected ? '• Connected' : ''}</p>
               </div>
             </div>
             ${net.connected 
-              ? `<span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-medium border border-emerald-500/20">Active</span>`
-              : `<button onclick="openWifiModal('${net.ssid}')" class="apple-btn-primary px-3.5 py-1.5 rounded-xl text-xs font-medium text-white">Connect</button>`
+              ? `<span class="px-3 py-1 rounded-full bg-[#30d158]/15 text-[#30d158] text-[11px] font-medium border border-[#30d158]/30">Connected</span>`
+              : `<button onclick="openWifiModal('${net.ssid}')" class="ios-btn-primary px-3.5 py-1.5 rounded-xl text-xs font-medium">Join</button>`
             }
           </div>
         `).join('');
       } catch (err) {
         btn.disabled = false;
-        list.innerHTML = '<div class="text-center py-6 text-rose-400 text-xs font-mono">Failed to scan networks</div>';
+        list.innerHTML = '<div class="text-center py-4 text-[#ff453a] text-xs font-mono">Failed to scan networks</div>';
       }
     }
 
     function openWifiModal(ssid) {
       targetSsid = ssid;
-      document.getElementById('modalSsidTitle').textContent = `Connect to "${ssid}"`;
+      document.getElementById('modalSsidTitle').textContent = `Join "${ssid}"`;
       document.getElementById('modalWifiPassword').value = '';
       document.getElementById('wifiModal').classList.remove('hidden');
     }
@@ -1598,33 +1825,28 @@ INDEX_HTML = """<!DOCTYPE html>
     async function submitWifiConnect() {
       const pwd = document.getElementById('modalWifiPassword').value;
       closeWifiModal();
-      alert(`Connecting to ${targetSsid}...`);
       try {
         const res = await fetch('/api/wifi/connect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ssid: targetSsid, password: pwd })
         });
-        const d = await res.json();
-        alert(d.message || d.error);
         scanWifi();
       } catch (err) {
-        alert('Network connection request failed');
+        console.error(err);
       }
     }
 
     async function savePin() {
       const pin = document.getElementById('pinInput').value.trim();
       try {
-        const res = await fetch('/api/settings/pin', {
+        await fetch('/api/settings/pin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pin })
         });
-        const d = await res.json();
-        alert(d.message);
       } catch (err) {
-        alert('Failed to update PIN');
+        console.error(err);
       }
     }
 

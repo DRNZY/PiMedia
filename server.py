@@ -33,6 +33,8 @@ PID_PATH = "/tmp/mpv.pid"
 PLAYLIST_PATH = "/tmp/pimedia-playlist.m3u"
 CONFIG_PATH = os.path.expanduser("~/.pimedia-config.json")
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "svg", "mp4", "mov", "avi", "mkv", "webm", "mp3", "flac", "wav", "ogg", "m4a", "aac"}
+AUTH_COOKIE = "pimedia_auth"
+AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 MAX_CONTENT_LENGTH = 1024 * 1024 * 1024  # 1 GB cap
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
@@ -73,7 +75,7 @@ def require_auth():
     pin = CONFIG.get("auth_pin", "").strip()
     if not pin:
         return None
-    client_auth = request.headers.get("X-Auth-Token") or request.args.get("token") or request.cookies.get("pimedia_auth")
+    client_auth = request.headers.get("X-Auth-Token") or request.args.get("token") or request.cookies.get(AUTH_COOKIE)
     if client_auth != pin:
         return jsonify({"error": "Unauthorized. PIN required."}), 401
     return None
@@ -693,16 +695,34 @@ def api_wifi_connect():
         return jsonify({"error": msg}), 400
     return jsonify({"message": msg})
 
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    data = request.get_json(silent=True) or {}
+    supplied = str(data.get("pin", "")).strip()
+    configured = CONFIG.get("auth_pin", "").strip()
+    if not configured:
+        return jsonify({"message": "No PIN configured", "pin_required": False})
+    if supplied != configured:
+        return jsonify({"error": "Incorrect PIN"}), 401
+    resp = jsonify({"message": "Unlocked", "pin_required": True})
+    resp.set_cookie(AUTH_COOKIE, configured, httponly=True, samesite="Lax", max_age=AUTH_COOKIE_MAX_AGE)
+    return resp
+
 @app.route("/api/settings/pin", methods=["POST"])
 def api_settings_pin():
     auth_res = require_auth()
     if auth_res:
         return auth_res
     data = request.get_json(silent=True) or {}
-    new_pin = data.get("pin", "").strip()
+    new_pin = str(data.get("pin", "")).strip()
     CONFIG["auth_pin"] = new_pin
     save_config(CONFIG)
-    return jsonify({"message": "Security PIN updated", "pin_configured": bool(new_pin)})
+    resp = jsonify({"message": "Security PIN updated", "pin_configured": bool(new_pin)})
+    if new_pin:
+        resp.set_cookie(AUTH_COOKIE, new_pin, httponly=True, samesite="Lax", max_age=AUTH_COOKIE_MAX_AGE)
+    else:
+        resp.delete_cookie(AUTH_COOKIE)
+    return resp
 
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
@@ -763,6 +783,9 @@ def api_delete():
 
 @app.route("/media/<path:filename>")
 def serve_media(filename):
+    auth_res = require_auth()
+    if auth_res:
+        return auth_res
     return send_from_directory(get_media_dir(), filename)
 
 ## Web UI
@@ -1314,6 +1337,20 @@ INDEX_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- Access Lock -->
+  <div id="authOverlay" class="fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="panel-surface p-6 sm:p-7 w-full max-w-sm space-y-4">
+      <div class="space-y-1">
+        <h4 class="text-base font-semibold text-white">Enter Access PIN</h4>
+        <p class="text-xs text-[#8e8e93]">This remote is locked. Enter the PIN configured in Settings.</p>
+      </div>
+      <input type="password" id="authPinInput" placeholder="PIN" autocomplete="current-password" onkeydown="if (event.key === 'Enter') submitUnlock();" class="bg-[#2c2c2e] border border-white/10 text-sm text-white rounded-xl px-3.5 py-3 w-full focus:outline-none focus:border-[#0a84ff] font-mono tracking-widest" />
+      <p id="authError" class="hidden text-xs text-[#ff453a] font-mono">Incorrect PIN.</p>
+      <button onclick="submitUnlock()" class="btn-primary w-full py-3 rounded-xl text-sm font-medium">Unlock</button>
+      <p class="text-[10px] text-[#636366] font-mono leading-relaxed">Locked out? Set "auth_pin" to an empty string in ~/.pimedia-config.json, then reload.</p>
+    </div>
+  </div>
+
   <script>
     let mediaItems = [];
     let activeTab = 'all';
@@ -1322,6 +1359,52 @@ INDEX_HTML = """<!DOCTYPE html>
     let isPlaying = false;
     let currentDuration = 0;
     let currentPosition = 0;
+    let authToken = localStorage.getItem('pimedia_token') || '';
+
+    function showLock() {
+      const overlay = document.getElementById('authOverlay');
+      if (!overlay.classList.contains('hidden')) return;
+      overlay.classList.remove('hidden');
+      document.getElementById('authError').classList.add('hidden');
+      const input = document.getElementById('authPinInput');
+      input.value = '';
+      input.focus();
+    }
+
+    function hideLock() {
+      document.getElementById('authOverlay').classList.add('hidden');
+    }
+
+    async function apiFetch(url, options = {}) {
+      const opts = Object.assign({}, options);
+      opts.headers = Object.assign({}, options.headers);
+      if (authToken) opts.headers['X-Auth-Token'] = authToken;
+      const res = await fetch(url, opts);
+      if (res.status === 401) showLock();
+      return res;
+    }
+
+    async function submitUnlock() {
+      const input = document.getElementById('authPinInput');
+      const candidate = input.value.trim();
+      if (!candidate) return;
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: candidate })
+      });
+      if (!res.ok) {
+        const err = document.getElementById('authError');
+        err.classList.remove('hidden');
+        input.value = '';
+        input.focus();
+        return;
+      }
+      authToken = candidate;
+      localStorage.setItem('pimedia_token', authToken);
+      hideLock();
+      refreshAll();
+    }
 
     function switchView(viewName) {
       const views = ['Remote', 'Media', 'Stream', 'Settings'];
@@ -1344,7 +1427,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
     async function fetchStatus() {
       try {
-        const res = await fetch('/api/status');
+        const res = await apiFetch('/api/status');
         if (!res.ok) return;
         const data = await res.json();
         
@@ -1421,7 +1504,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
     async function fetchFiles() {
       try {
-        const res = await fetch('/api/files');
+        const res = await apiFetch('/api/files');
         if (!res.ok) return;
         mediaItems = await res.json();
         document.getElementById('fileCountBadge').textContent = mediaItems.length;
@@ -1529,7 +1612,7 @@ INDEX_HTML = """<!DOCTYPE html>
     }
 
     async function togglePlayPause() {
-      await fetch('/api/playback/pause', { method: 'POST' });
+      await apiFetch('/api/playback/pause', { method: 'POST' });
       fetchStatus();
     }
 
@@ -1537,7 +1620,7 @@ INDEX_HTML = """<!DOCTYPE html>
       let endpoint = '/api/playback/' + action;
       if (action === 'start') endpoint = '/api/playback/start';
       try {
-        await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        await apiFetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
         fetchStatus();
       } catch (err) {
         console.error(err);
@@ -1546,7 +1629,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
     async function seekRelative(secs) {
       try {
-        await fetch('/api/playback/seek', {
+        await apiFetch('/api/playback/seek', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ seconds: secs })
@@ -1572,7 +1655,7 @@ INDEX_HTML = """<!DOCTYPE html>
     async function playDirect(filename) {
       try {
         const dur = document.getElementById('slideDuration').value;
-        await fetch('/api/playback/start', {
+        await apiFetch('/api/playback/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ file: filename, duration: parseInt(dur) })
@@ -1591,7 +1674,7 @@ INDEX_HTML = """<!DOCTYPE html>
       const url = document.getElementById('streamUrlInput').value.trim();
       if (!url) return;
       try {
-        await fetch('/api/playback/stream', {
+        await apiFetch('/api/playback/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url })
@@ -1604,7 +1687,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
     async function updateVolume(val) {
       try {
-        await fetch('/api/playback/volume', {
+        await apiFetch('/api/playback/volume', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ volume: parseInt(val) })
@@ -1624,7 +1707,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
     async function updateDuration(val) {
       try {
-        await fetch('/api/playback/duration', {
+        await apiFetch('/api/playback/duration', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ duration: parseInt(val) })
@@ -1636,7 +1719,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
     async function toggleKenBurns(enabled) {
       try {
-        await fetch('/api/playback/kenburns', {
+        await apiFetch('/api/playback/kenburns', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enabled })
@@ -1648,7 +1731,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
     async function toggleCec(enabled) {
       try {
-        await fetch('/api/settings/cec', {
+        await apiFetch('/api/settings/cec', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enabled })
@@ -1660,7 +1743,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
     async function updateBgAudio(val) {
       try {
-        await fetch('/api/playback/background_audio', {
+        await apiFetch('/api/playback/background_audio', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ audio_file: val })
@@ -1673,7 +1756,7 @@ INDEX_HTML = """<!DOCTYPE html>
     async function toggleDisplayPower() {
       currentPowerState = !currentPowerState;
       try {
-        await fetch('/api/display/power', {
+        await apiFetch('/api/display/power', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ power: currentPowerState })
@@ -1688,7 +1771,7 @@ INDEX_HTML = """<!DOCTYPE html>
       const sleep_time = document.getElementById('sleepTimeInput').value;
       const wake_time = document.getElementById('wakeTimeInput').value;
       try {
-        await fetch('/api/display/schedule', {
+        await apiFetch('/api/display/schedule', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enabled, sleep_time, wake_time })
@@ -1701,7 +1784,7 @@ INDEX_HTML = """<!DOCTYPE html>
     async function deleteFile(filename) {
       if (!confirm(`Delete ${filename}?`)) return;
       try {
-        const res = await fetch('/api/delete', {
+        const res = await apiFetch('/api/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename })
@@ -1755,7 +1838,7 @@ INDEX_HTML = """<!DOCTYPE html>
         formData.append('file', file);
 
         try {
-          const res = await fetch('/api/upload', { method: 'POST', body: formData });
+          const res = await apiFetch('/api/upload', { method: 'POST', body: formData });
           if (res.ok) uploaded++;
         } catch (err) {
           console.error(err);
@@ -1779,7 +1862,7 @@ INDEX_HTML = """<!DOCTYPE html>
       btn.disabled = true;
 
       try {
-        const res = await fetch('/api/wifi/scan');
+        const res = await apiFetch('/api/wifi/scan');
         const data = await res.json();
         btn.disabled = false;
 
@@ -1826,7 +1909,7 @@ INDEX_HTML = """<!DOCTYPE html>
       const pwd = document.getElementById('modalWifiPassword').value;
       closeWifiModal();
       try {
-        const res = await fetch('/api/wifi/connect', {
+        const res = await apiFetch('/api/wifi/connect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ssid: targetSsid, password: pwd })
@@ -1840,11 +1923,19 @@ INDEX_HTML = """<!DOCTYPE html>
     async function savePin() {
       const pin = document.getElementById('pinInput').value.trim();
       try {
-        await fetch('/api/settings/pin', {
+        const res = await apiFetch('/api/settings/pin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pin })
         });
+        if (!res.ok) return;
+        authToken = pin;
+        if (pin) {
+          localStorage.setItem('pimedia_token', pin);
+        } else {
+          localStorage.removeItem('pimedia_token');
+        }
+        document.getElementById('pinInput').value = '';
       } catch (err) {
         console.error(err);
       }
